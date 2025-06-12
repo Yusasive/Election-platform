@@ -15,6 +15,7 @@ interface ElectionSettings {
   votingStartTime: string;
   votingEndTime: string;
   isVotingActive: boolean;
+  loginDuration: number;
 }
 
 export default function HomePage() {
@@ -30,7 +31,7 @@ export default function HomePage() {
   const [isVotingPeriod, setIsVotingPeriod] = useState(false);
 
   // Fetch election settings
-  const { data: settingsData, refetch: refetchSettings } = useApi<{
+  const { data: settingsData, loading: settingsLoading, refetch: refetchSettings } = useApi<{
     success: boolean;
     settings: ElectionSettings;
   }>('/settings');
@@ -38,14 +39,22 @@ export default function HomePage() {
   // User registration mutation
   const { mutate: registerUser, loading: registering } = useApiMutation('/users');
 
-  // Update current time every second
+  // Update current time every second and refetch settings periodically
   useEffect(() => {
-    const interval = setInterval(() => {
+    const timeInterval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, []);
+    // Refetch settings every 30 seconds to get real-time updates
+    const settingsInterval = setInterval(() => {
+      refetchSettings();
+    }, 30000);
+
+    return () => {
+      clearInterval(timeInterval);
+      clearInterval(settingsInterval);
+    };
+  }, [refetchSettings]);
 
   // Update countdown and voting status
   useEffect(() => {
@@ -64,14 +73,14 @@ export default function HomePage() {
 
     if (currentTime.getTime() < votingStartTime.getTime()) {
       const timeDiff = votingStartTime.getTime() - currentTime.getTime();
-      setTimeRemaining(formatTime(timeDiff));
+      setTimeRemaining(`Voting starts in: ${formatTime(timeDiff)}`);
       setIsVotingPeriod(false);
     } else if (
       currentTime.getTime() >= votingStartTime.getTime() &&
       currentTime.getTime() <= votingEndTime.getTime()
     ) {
       const timeDiff = votingEndTime.getTime() - currentTime.getTime();
-      setTimeRemaining(formatTime(timeDiff));
+      setTimeRemaining(`Voting ends in: ${formatTime(timeDiff)}`);
       setIsVotingPeriod(true);
     } else {
       setTimeRemaining("Voting has ended.");
@@ -139,7 +148,16 @@ export default function HomePage() {
         </div>
 
         <div className="mb-6">
-          {isVotingPeriod ? (
+          {settingsLoading ? (
+            <div className="text-center">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="w-3 h-3 bg-gray-400 rounded-full animate-pulse"></div>
+                  <span className="text-gray-600 font-semibold">Loading voting status...</span>
+                </div>
+              </div>
+            </div>
+          ) : isVotingPeriod ? (
             <div className="text-center">
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center justify-center space-x-2">
@@ -147,7 +165,7 @@ export default function HomePage() {
                   <span className="text-green-700 font-semibold">Voting is Active</span>
                 </div>
                 <p className="text-green-600 text-sm mt-2">
-                  Time Remaining: <strong>{timeRemaining}</strong>
+                  <strong>{timeRemaining}</strong>
                 </p>
               </div>
             </div>

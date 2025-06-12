@@ -2,45 +2,36 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useApi, useApiMutation } from "@/hooks/useApi";
+import { formatTime } from "@/lib/utils";
 
 interface TimeSettings {
   votingStartTime: string;
   votingEndTime: string;
-  loginDuration: number; // in minutes
+  loginDuration: number;
   isVotingActive: boolean;
 }
 
 export default function TimeManagement() {
-  const [timeSettings, setTimeSettings] = useState<TimeSettings>({
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [localSettings, setLocalSettings] = useState<TimeSettings>({
     votingStartTime: "",
     votingEndTime: "",
-    loginDuration: 35, // 5 * 7 minutes default
+    loginDuration: 35,
     isVotingActive: false,
   });
-  const [currentTime, setCurrentTime] = useState(new Date());
 
+  // Fetch current settings
+  const { data: settingsData, loading: settingsLoading, refetch } = useApi<{
+    success: boolean;
+    settings: TimeSettings;
+  }>('/settings');
+
+  // Update settings mutation
+  const { mutate: updateSettings, loading: updating } = useApiMutation('/settings');
+
+  // Update current time every second
   useEffect(() => {
-    // Load existing settings
-    const savedSettings = localStorage.getItem("timeSettings");
-    if (savedSettings) {
-      setTimeSettings(JSON.parse(savedSettings));
-    } else {
-      // Set default times
-      const now = new Date();
-      const startTime = new Date(now);
-      startTime.setHours(6, 0, 0, 0);
-      const endTime = new Date(now);
-      endTime.setHours(20, 0, 0, 0);
-
-      setTimeSettings({
-        votingStartTime: startTime.toISOString().slice(0, 16),
-        votingEndTime: endTime.toISOString().slice(0, 16),
-        loginDuration: 35,
-        isVotingActive: false,
-      });
-    }
-
-    // Update current time every second
     const interval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
@@ -48,18 +39,58 @@ export default function TimeManagement() {
     return () => clearInterval(interval);
   }, []);
 
-  const saveTimeSettings = () => {
-    localStorage.setItem("timeSettings", JSON.stringify(timeSettings));
-    alert("Time settings saved successfully!");
+  // Load settings when data is available
+  useEffect(() => {
+    if (settingsData?.settings) {
+      const settings = settingsData.settings;
+      setLocalSettings({
+        votingStartTime: new Date(settings.votingStartTime).toISOString().slice(0, 16),
+        votingEndTime: new Date(settings.votingEndTime).toISOString().slice(0, 16),
+        loginDuration: settings.loginDuration,
+        isVotingActive: settings.isVotingActive,
+      });
+    }
+  }, [settingsData]);
+
+  const saveTimeSettings = async () => {
+    try {
+      await updateSettings({
+        method: 'PUT',
+      }, {
+        votingStartTime: new Date(localSettings.votingStartTime).toISOString(),
+        votingEndTime: new Date(localSettings.votingEndTime).toISOString(),
+        loginDuration: localSettings.loginDuration,
+        isVotingActive: localSettings.isVotingActive,
+      });
+      
+      alert("Time settings saved successfully!");
+      refetch(); // Refresh the data
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to save settings");
+    }
   };
 
-  const toggleVoting = () => {
+  const toggleVoting = async () => {
     const newSettings = {
-      ...timeSettings,
-      isVotingActive: !timeSettings.isVotingActive,
+      ...localSettings,
+      isVotingActive: !localSettings.isVotingActive,
     };
-    setTimeSettings(newSettings);
-    localStorage.setItem("timeSettings", JSON.stringify(newSettings));
+    
+    try {
+      await updateSettings({
+        method: 'PUT',
+      }, {
+        votingStartTime: new Date(newSettings.votingStartTime).toISOString(),
+        votingEndTime: new Date(newSettings.votingEndTime).toISOString(),
+        loginDuration: newSettings.loginDuration,
+        isVotingActive: newSettings.isVotingActive,
+      });
+      
+      setLocalSettings(newSettings);
+      refetch(); // Refresh the data
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to toggle voting");
+    }
   };
 
   const formatDateTime = (dateString: string) => {
@@ -68,15 +99,15 @@ export default function TimeManagement() {
   };
 
   const getVotingStatus = () => {
-    if (!timeSettings.votingStartTime || !timeSettings.votingEndTime) {
+    if (!localSettings.votingStartTime || !localSettings.votingEndTime) {
       return { status: "Not configured", color: "gray" };
     }
 
     const now = currentTime.getTime();
-    const start = new Date(timeSettings.votingStartTime).getTime();
-    const end = new Date(timeSettings.votingEndTime).getTime();
+    const start = new Date(localSettings.votingStartTime).getTime();
+    const end = new Date(localSettings.votingEndTime).getTime();
 
-    if (!timeSettings.isVotingActive) {
+    if (!localSettings.isVotingActive) {
       return { status: "Manually Disabled", color: "red" };
     }
 
@@ -90,13 +121,13 @@ export default function TimeManagement() {
   };
 
   const getTimeRemaining = () => {
-    if (!timeSettings.votingStartTime || !timeSettings.votingEndTime) {
+    if (!localSettings.votingStartTime || !localSettings.votingEndTime) {
       return "Not configured";
     }
 
     const now = currentTime.getTime();
-    const start = new Date(timeSettings.votingStartTime).getTime();
-    const end = new Date(timeSettings.votingEndTime).getTime();
+    const start = new Date(localSettings.votingStartTime).getTime();
+    const end = new Date(localSettings.votingEndTime).getTime();
 
     let targetTime;
     let prefix;
@@ -112,16 +143,18 @@ export default function TimeManagement() {
     }
 
     const diff = targetTime - now;
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-    return `${prefix}${hours.toString().padStart(2, "0")}:${minutes
-      .toString()
-      .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    return `${prefix}${formatTime(diff)}`;
   };
 
   const votingStatus = getVotingStatus();
+
+  if (settingsLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -131,33 +164,33 @@ export default function TimeManagement() {
         </h2>
 
         {/* Current Status */}
-        <div className="bg-gray-50 rounded-lg p-6 mb-8">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 mb-8 border border-blue-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
             Current Status
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center">
-              <div className="text-2xl font-mono text-gray-800">
+              <div className="text-2xl font-mono text-gray-800 bg-white rounded-lg p-3 shadow-sm">
                 {currentTime.toLocaleTimeString()}
               </div>
-              <div className="text-sm text-gray-600">Current Time</div>
+              <div className="text-sm text-gray-600 mt-2">Current Time</div>
             </div>
             <div className="text-center">
               <div
-                className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium shadow-sm ${
                   votingStatus.color === "green"
-                    ? "bg-green-100 text-green-800"
+                    ? "bg-green-100 text-green-800 border border-green-200"
                     : votingStatus.color === "yellow"
-                    ? "bg-yellow-100 text-yellow-800"
+                    ? "bg-yellow-100 text-yellow-800 border border-yellow-200"
                     : votingStatus.color === "red"
-                    ? "bg-red-100 text-red-800"
-                    : "bg-gray-100 text-gray-800"
+                    ? "bg-red-100 text-red-800 border border-red-200"
+                    : "bg-gray-100 text-gray-800 border border-gray-200"
                 }`}
               >
                 <div
                   className={`w-2 h-2 rounded-full mr-2 ${
                     votingStatus.color === "green"
-                      ? "bg-green-500"
+                      ? "bg-green-500 animate-pulse"
                       : votingStatus.color === "yellow"
                       ? "bg-yellow-500"
                       : votingStatus.color === "red"
@@ -167,21 +200,22 @@ export default function TimeManagement() {
                 ></div>
                 {votingStatus.status}
               </div>
-              <div className="text-sm text-gray-600 mt-1">Voting Status</div>
+              <div className="text-sm text-gray-600 mt-2">Voting Status</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-semibold text-gray-800">
+              <div className="text-lg font-semibold text-gray-800 bg-white rounded-lg p-3 shadow-sm">
                 {getTimeRemaining()}
               </div>
-              <div className="text-sm text-gray-600">Time Remaining</div>
+              <div className="text-sm text-gray-600 mt-2">Time Remaining</div>
             </div>
           </div>
         </div>
 
         {/* Emergency Controls */}
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-8">
-          <h3 className="text-lg font-semibold text-red-800 mb-4">
-            🚨 Emergency Controls
+        <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-lg p-6 mb-8">
+          <h3 className="text-lg font-semibold text-red-800 mb-4 flex items-center">
+            <span className="mr-2">🚨</span>
+            Emergency Controls
           </h3>
           <div className="flex items-center justify-between">
             <div>
@@ -194,13 +228,21 @@ export default function TimeManagement() {
             </div>
             <button
               onClick={toggleVoting}
-              className={`px-6 py-3 rounded-lg font-semibold transition duration-200 ${
-                timeSettings.isVotingActive
+              disabled={updating}
+              className={`px-6 py-3 rounded-lg font-semibold transition duration-200 shadow-lg ${
+                localSettings.isVotingActive
                   ? "bg-red-500 text-white hover:bg-red-600"
                   : "bg-green-500 text-white hover:bg-green-600"
-              }`}
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              {timeSettings.isVotingActive ? "Disable Voting" : "Enable Voting"}
+              {updating ? (
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Updating...</span>
+                </div>
+              ) : (
+                localSettings.isVotingActive ? "Disable Voting" : "Enable Voting"
+              )}
             </button>
           </div>
         </div>
@@ -210,9 +252,10 @@ export default function TimeManagement() {
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="bg-blue-50 rounded-lg p-6"
+            className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-6 border border-blue-100"
           >
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">📅</span>
               Voting Schedule
             </h3>
             <div className="space-y-4">
@@ -222,17 +265,17 @@ export default function TimeManagement() {
                 </label>
                 <input
                   type="datetime-local"
-                  value={timeSettings.votingStartTime}
+                  value={localSettings.votingStartTime}
                   onChange={(e) =>
-                    setTimeSettings({
-                      ...timeSettings,
+                    setLocalSettings({
+                      ...localSettings,
                       votingStartTime: e.target.value,
                     })
                   }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Current: {formatDateTime(timeSettings.votingStartTime)}
+                  Current: {formatDateTime(localSettings.votingStartTime)}
                 </p>
               </div>
               <div>
@@ -241,17 +284,17 @@ export default function TimeManagement() {
                 </label>
                 <input
                   type="datetime-local"
-                  value={timeSettings.votingEndTime}
+                  value={localSettings.votingEndTime}
                   onChange={(e) =>
-                    setTimeSettings({
-                      ...timeSettings,
+                    setLocalSettings({
+                      ...localSettings,
                       votingEndTime: e.target.value,
                     })
                   }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Current: {formatDateTime(timeSettings.votingEndTime)}
+                  Current: {formatDateTime(localSettings.votingEndTime)}
                 </p>
               </div>
             </div>
@@ -260,9 +303,10 @@ export default function TimeManagement() {
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="bg-green-50 rounded-lg p-6"
+            className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-6 border border-green-100"
           >
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">⚙️</span>
               Session Settings
             </h3>
             <div className="space-y-4">
@@ -274,36 +318,37 @@ export default function TimeManagement() {
                   type="number"
                   min="1"
                   max="120"
-                  value={timeSettings.loginDuration}
+                  value={localSettings.loginDuration}
                   onChange={(e) =>
-                    setTimeSettings({
-                      ...timeSettings,
+                    setLocalSettings({
+                      ...localSettings,
                       loginDuration: parseInt(e.target.value) || 35,
                     })
                   }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-white"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   How long users stay logged in after login
                 </p>
               </div>
-              <div className="bg-white rounded-lg p-4 border">
-                <h4 className="font-medium text-gray-800 mb-2">
+              <div className="bg-white rounded-lg p-4 border border-green-200">
+                <h4 className="font-medium text-gray-800 mb-3 flex items-center">
+                  <span className="mr-2">⚡</span>
                   Quick Time Presets
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => {
                       const now = new Date();
-                      const start = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes from now
-                      const end = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours from now
-                      setTimeSettings({
-                        ...timeSettings,
+                      const start = new Date(now.getTime() + 5 * 60 * 1000);
+                      const end = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+                      setLocalSettings({
+                        ...localSettings,
                         votingStartTime: start.toISOString().slice(0, 16),
                         votingEndTime: end.toISOString().slice(0, 16),
                       });
                     }}
-                    className="bg-blue-500 text-white px-3 py-2 rounded text-sm hover:bg-blue-600"
+                    className="bg-blue-500 text-white px-3 py-2 rounded text-sm hover:bg-blue-600 transition duration-200"
                   >
                     Start in 5min
                   </button>
@@ -311,14 +356,14 @@ export default function TimeManagement() {
                     onClick={() => {
                       const now = new Date();
                       const start = new Date(now);
-                      const end = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
-                      setTimeSettings({
-                        ...timeSettings,
+                      const end = new Date(now.getTime() + 60 * 60 * 1000);
+                      setLocalSettings({
+                        ...localSettings,
                         votingStartTime: start.toISOString().slice(0, 16),
                         votingEndTime: end.toISOString().slice(0, 16),
                       });
                     }}
-                    className="bg-green-500 text-white px-3 py-2 rounded text-sm hover:bg-green-600"
+                    className="bg-green-500 text-white px-3 py-2 rounded text-sm hover:bg-green-600 transition duration-200"
                   >
                     Start Now
                   </button>
@@ -331,9 +376,17 @@ export default function TimeManagement() {
         <div className="flex justify-center mt-8">
           <button
             onClick={saveTimeSettings}
-            className="bg-blue-500 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-600 transition duration-200"
+            disabled={updating}
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-indigo-700 transition duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Save Time Settings
+            {updating ? (
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span>Saving...</span>
+              </div>
+            ) : (
+              "Save Time Settings"
+            )}
           </button>
         </div>
       </div>
