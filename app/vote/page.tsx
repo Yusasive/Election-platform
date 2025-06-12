@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import candidates from "../../data/candidates.json";
 
 interface Candidate {
   id: number; 
@@ -46,9 +45,28 @@ export default function VotingPage() {
   const [selections, setSelections] = useState<Selections>({});
   const [voterData, setVoterData] = useState<VoterData | null>(null);
   const [isVotingOpen, setIsVotingOpen] = useState(false);
+  const [candidates, setCandidates] = useState<Position[]>([]);
+  const [votingTimes, setVotingTimes] = useState({
+    votingEndTime: "",
+    loginDuration: 35,
+    isVotingActive: false,
+  });
 
-  const loginEndTime = useMemo(() => Date.now() + 5 * 7 * 60 * 1000, []);
-  const votingEndTime = useMemo(() => Date.now() + 5 * 7 * 60 * 1000, []);
+  // Calculate login and voting end times
+  const loginEndTime = useMemo(() => {
+    const loginTime = localStorage.getItem("loginTime");
+    if (loginTime) {
+      return parseInt(loginTime) + (votingTimes.loginDuration * 60 * 1000);
+    }
+    return Date.now() + (votingTimes.loginDuration * 60 * 1000);
+  }, [votingTimes.loginDuration]);
+
+  const votingEndTime = useMemo(() => {
+    if (votingTimes.votingEndTime) {
+      return new Date(votingTimes.votingEndTime).getTime();
+    }
+    return Date.now() + (2 * 60 * 60 * 1000); // Default 2 hours
+  }, [votingTimes.votingEndTime]);
 
   const loginTimeLeft = useCountdown(loginEndTime);
   const votingTimeLeft = useCountdown(votingEndTime);
@@ -67,6 +85,29 @@ export default function VotingPage() {
   };
 
   useEffect(() => {
+    // Load admin settings
+    const savedSettings = localStorage.getItem("timeSettings");
+    if (savedSettings) {
+      const settings = JSON.parse(savedSettings);
+      setVotingTimes({
+        votingEndTime: settings.votingEndTime || "",
+        loginDuration: settings.loginDuration || 35,
+        isVotingActive: settings.isVotingActive || false,
+      });
+    }
+
+    // Load candidates (check localStorage first, then fallback to JSON)
+    const savedCandidates = localStorage.getItem("candidates");
+    if (savedCandidates) {
+      setCandidates(JSON.parse(savedCandidates));
+    } else {
+      // Load from JSON file
+      fetch("/data/candidates.json")
+        .then(response => response.json())
+        .then(data => setCandidates(data))
+        .catch(error => console.error("Error loading candidates:", error));
+    }
+
     const storedVoterData = JSON.parse(
       localStorage.getItem("voterData") || "{}"
     ) as VoterData;
@@ -83,21 +124,25 @@ export default function VotingPage() {
       window.location.href = "/";
       return;
     }
-    setVoterData((prevData) => {
-      if (JSON.stringify(prevData) !== JSON.stringify(storedVoterData)) {
-        return storedVoterData;
-      }
-      return prevData;
-    });
 
+    // Set login time if not already set
+    if (!localStorage.getItem("loginTime")) {
+      localStorage.setItem("loginTime", Date.now().toString());
+    }
+
+    setVoterData(storedVoterData);
 
     const interval = setInterval(() => {
-      const now = new Date().getTime();
-      setIsVotingOpen(now <= votingEndTime);
+      const now = Date.now();
+      const adminActive = JSON.parse(localStorage.getItem("timeSettings") || "{}")?.isVotingActive;
+      const withinTimeLimit = now <= votingEndTime;
+      const loginValid = now <= loginEndTime;
+      
+      setIsVotingOpen(adminActive && withinTimeLimit && loginValid);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [votingEndTime]);
+  }, [votingEndTime, loginEndTime]);
 
   const handleSelection = (
     position: string,
@@ -144,6 +189,7 @@ export default function VotingPage() {
           body: JSON.stringify({
             matricNumber: voterData?.matricNumber,
             votes: selections,
+            timestamp: new Date().toISOString(),
           }),
         }
       );
@@ -153,6 +199,7 @@ export default function VotingPage() {
       }
 
       localStorage.setItem("voteRecord", JSON.stringify(selections));
+      localStorage.removeItem("loginTime");
       alert("Thank you for voting!");
       window.location.href = "/congratulations";
     } catch (error) {
@@ -165,174 +212,215 @@ export default function VotingPage() {
   };
 
   return (
-    <main className="p-6 bg-gradient-to-r from-gray-100 via-white to-gray-100 min-h-screen">
+    <main className="p-6 bg-gradient-to-br from-blue-50 via-white to-indigo-50 min-h-screen">
       <motion.header
-        className="text-center"
+        className="text-center mb-8"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8 }}>
-        <h1 className="text-4xl font-extrabold text-gray-800">
+        transition={{ duration: 0.8 }}
+      >
+        <h1 className="text-4xl font-extrabold text-gray-800 mb-2">
           🗳️ Cast Your Vote
         </h1>
-        <p className="mt-2 text-lg text-gray-600">
+        <p className="text-lg text-gray-600">
           Your voice matters! Make your vote count.
         </p>
       </motion.header>
 
       <motion.section
-        className="mt-6 bg-white shadow-lg rounded-lg p-6 flex flex-col sm:flex-row items-center justify-between gap-6"
+        className="max-w-4xl mx-auto mb-8 bg-white shadow-lg rounded-2xl p-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.3, duration: 0.8 }}>
-        <div className="flex items-center gap-3">
-          <span className="bg-blue-500 text-white p-2 rounded-full">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 6v6l4 2"
-              />
-            </svg>
-          </span>
-          <p className="text-gray-700 font-medium">
-            Login Time Left:{" "}
-            <span className="text-blue-500 font-bold">
-              {formatTime(loginTimeLeft)}
-            </span>
-          </p>
+        transition={{ delay: 0.3, duration: 0.8 }}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-blue-100 rounded-full">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6 text-blue-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 6v6l4 2"
+                />
+              </svg>
+            </div>
+            <div>
+              <p className="text-gray-700 font-medium">Login Session</p>
+              <p className="text-blue-600 font-bold text-lg">
+                {formatTime(loginTimeLeft)}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-green-100 rounded-full">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6 text-green-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 6v6l4 2"
+                />
+              </svg>
+            </div>
+            <div>
+              <p className="text-gray-700 font-medium">Voting Ends</p>
+              <p className="text-green-600 font-bold text-lg">
+                {formatTime(votingTimeLeft)}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="bg-green-500 text-white p-2 rounded-full">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 6v6l4 2"
-              />
-            </svg>
-          </span>
-          <p className="text-gray-700 font-medium">
-            Voting Time Left:{" "}
-            <span className="text-green-500 font-bold">
-              {formatTime(votingTimeLeft)}
-            </span>
-          </p>
-        </div>
+
         {!isVotingOpen && (
-          <p className="text-center text-red-600 font-semibold">
-            🚫 Voting is currently closed!
-          </p>
+          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-center text-red-700 font-semibold">
+              🚫 Voting is currently closed!
+            </p>
+          </div>
         )}
       </motion.section>
 
       {voterData && (
         <motion.div
-          className="mt-6 bg-blue-50 shadow-md rounded-lg p-6 text-center"
+          className="max-w-4xl mx-auto mb-8 bg-white shadow-lg rounded-2xl p-6"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.5, duration: 0.8 }}>
-          <div className="flex flex-col items-center">
-            <div className="w-16 h-16 bg-blue-200 rounded-full flex items-center justify-center text-blue-600 font-bold text-xl">
+          transition={{ delay: 0.5, duration: 0.8 }}
+        >
+          <div className="flex items-center space-x-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg">
               {voterData.fullName[0].toUpperCase()}
             </div>
-            <p className="mt-2 text-gray-700">
-              Welcome,{" "}
-              <span className="text-blue-600 font-semibold">
-                {voterData.fullName}
-              </span>{" "}
-              (<span className="text-gray-500">{voterData.matricNumber}</span>)
-            </p>
+            <div>
+              <h3 className="text-xl font-semibold text-gray-800">
+                Welcome, {voterData.fullName}
+              </h3>
+              <p className="text-gray-600">
+                Matric: {voterData.matricNumber}
+              </p>
+            </div>
           </div>
         </motion.div>
       )}
 
       <motion.section
-        className="mt-8 space-y-6"
+        className="max-w-4xl mx-auto space-y-8"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.8, duration: 0.8 }}>
-        {candidates.map((position: Position) => (
+        transition={{ delay: 0.8, duration: 0.8 }}
+      >
+        {candidates.map((position: Position, index) => (
           <motion.div
             key={position.position}
-            className="bg-white shadow-lg p-6 rounded-lg border border-gray-200 hover:shadow-xl transition"
-            whileHover={{ scale: 1.02 }}>
-            <h2 className="text-xl font-bold text-gray-800 mb-4">
-              {position.position}
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            className="bg-white shadow-lg rounded-2xl p-6 border border-gray-100 hover:shadow-xl transition duration-300"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 * index }}
+          >
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                {position.position}
+              </h2>
+              <p className="text-gray-600">
+                {position.allowMultiple 
+                  ? "You can select multiple candidates" 
+                  : "Select one candidate"}
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {position.candidates.map((candidate: Candidate) => (
-                <div
+                <motion.div
                   key={candidate.id}
-                  className="flex items-center gap-3 bg-gray-50 hover:bg-gray-100 p-4 rounded-lg transition shadow-sm">
-                  {position.allowMultiple ? (
-                    <input
-                      type="checkbox"
-                      checked={
-                        !!selections[position.position]?.includes(
-                          candidate.id.toString()
-                        )
-                      }
-                      onChange={() =>
-                        handleSelection(
-                          position.position,
-                          candidate.id.toString(),
-                          position.allowMultiple
-                        )
-                      }
-                      className="form-checkbox h-6 w-6 text-blue-500"
-                    />
-                  ) : (
-                    <input
-                      type="radio"
-                      name={position.position}
-                      checked={
-                        selections[position.position] ===
-                        candidate.id.toString()
-                      }
-                      onChange={() =>
-                        handleSelection(
-                          position.position,
-                          candidate.id.toString(),
-                          position.allowMultiple
-                        )
-                      }
-                      className="form-radio h-6 w-6 text-blue-500"
-                    />
-                  )}
-                  <label className="text-gray-700 font-medium">
-                    {candidate.name}
-                  </label>
-                </div>
+                  className="group cursor-pointer"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() =>
+                    handleSelection(
+                      position.position,
+                      candidate.id.toString(),
+                      position.allowMultiple
+                    )
+                  }
+                >
+                  <div className={`p-4 rounded-xl border-2 transition duration-200 ${
+                    (position.allowMultiple 
+                      ? selections[position.position]?.includes(candidate.id.toString())
+                      : selections[position.position] === candidate.id.toString())
+                      ? "border-blue-500 bg-blue-50 shadow-md"
+                      : "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100"
+                  }`}>
+                    <div className="flex items-center space-x-3">
+                      {position.allowMultiple ? (
+                        <input
+                          type="checkbox"
+                          checked={
+                            !!selections[position.position]?.includes(
+                              candidate.id.toString()
+                            )
+                          }
+                          onChange={() => {}}
+                          className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                      ) : (
+                        <input
+                          type="radio"
+                          name={position.position}
+                          checked={
+                            selections[position.position] ===
+                            candidate.id.toString()
+                          }
+                          onChange={() => {}}
+                          className="h-5 w-5 text-blue-600 focus:ring-blue-500"
+                        />
+                      )}
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-800">
+                          {candidate.name}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Candidate ID: {candidate.id}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
               ))}
             </div>
           </motion.div>
         ))}
       </motion.section>
+
       <motion.div
-        className="text-center mt-8"
+        className="max-w-4xl mx-auto text-center mt-12"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 1, duration: 0.8 }}>
+        transition={{ delay: 1, duration: 0.8 }}
+      >
         <button
           onClick={handleVote}
-          className={`relative w-full sm:w-1/3 bg-gradient-to-r from-green-400 via-green-500 to-green-600 text-white py-3 px-6 rounded-lg font-bold transition duration-300 ease-in-out transform hover:scale-105 ${
-            !isVotingOpen ? "opacity-50 cursor-not-allowed" : ""
+          className={`px-12 py-4 rounded-xl font-bold text-lg transition duration-300 transform hover:scale-105 ${
+            isVotingOpen
+              ? "bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl"
+              : "bg-gray-300 text-gray-500 cursor-not-allowed"
           }`}
-          disabled={!isVotingOpen}>
-          <span className="absolute inset-0 rounded-lg bg-green-500 opacity-0 group-hover:opacity-30 transition"></span>
-          Cast Vote
+          disabled={!isVotingOpen}
+        >
+          {isVotingOpen ? "🗳️ Cast Your Vote" : "Voting Closed"}
         </button>
       </motion.div>
     </main>
