@@ -1,39 +1,45 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
+import { useApi, useApiMutation } from "@/hooks/useApi";
+import { formatTime } from "@/lib/utils";
+
+interface FormData {
+  matricNumber: string;
+  fullName: string;
+  department: string;
+  image: string;
+}
+
+interface ElectionSettings {
+  votingStartTime: string;
+  votingEndTime: string;
+  isVotingActive: boolean;
+}
 
 export default function HomePage() {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     matricNumber: "",
     fullName: "",
     department: "",
     image: "",
   });
 
-  // Get voting times from localStorage (set by admin)
-  const [votingTimes, setVotingTimes] = useState({
-    votingStartTime: "2024-11-17T06:00:00",
-    votingEndTime: "2024-11-17T20:00:00",
-    isVotingActive: false,
-  });
-
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timeRemaining, setTimeRemaining] = useState("");
   const [isVotingPeriod, setIsVotingPeriod] = useState(false);
 
-  // Update the current time every second
-  useEffect(() => {
-    // Load admin-controlled voting times
-    const savedSettings = localStorage.getItem("timeSettings");
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      setVotingTimes({
-        votingStartTime: settings.votingStartTime || "2024-11-17T06:00:00",
-        votingEndTime: settings.votingEndTime || "2024-11-17T20:00:00",
-        isVotingActive: settings.isVotingActive || false,
-      });
-    }
+  // Fetch election settings
+  const { data: settingsData, refetch: refetchSettings } = useApi<{
+    success: boolean;
+    settings: ElectionSettings;
+  }>('/settings');
 
+  // User registration mutation
+  const { mutate: registerUser, loading: registering } = useApiMutation('/users');
+
+  // Update current time every second
+  useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
@@ -41,50 +47,37 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Update the countdown timer and voting period status
+  // Update countdown and voting status
   useEffect(() => {
-    const updateCountdown = () => {
-      const votingStartTime = new Date(votingTimes.votingStartTime);
-      const votingEndTime = new Date(votingTimes.votingEndTime);
+    if (!settingsData?.settings) return;
 
-      // Check admin override first
-      if (!votingTimes.isVotingActive) {
-        setTimeRemaining("Voting is currently disabled by admin.");
-        setIsVotingPeriod(false);
-        return;
-      }
+    const settings = settingsData.settings;
+    const votingStartTime = new Date(settings.votingStartTime);
+    const votingEndTime = new Date(settings.votingEndTime);
 
-      if (currentTime.getTime() < votingStartTime.getTime()) {
-        const timeDiff = votingStartTime.getTime() - currentTime.getTime();
-        setTimeRemaining(formatTime(timeDiff));
-        setIsVotingPeriod(false);
-      } else if (
-        currentTime.getTime() >= votingStartTime.getTime() &&
-        currentTime.getTime() <= votingEndTime.getTime()
-      ) {
-        const timeDiff = votingEndTime.getTime() - currentTime.getTime();
-        setTimeRemaining(formatTime(timeDiff));
-        setIsVotingPeriod(true);
-      } else {
-        setTimeRemaining("Voting has ended.");
-        setIsVotingPeriod(false);
-      }
-    };
+    // Check admin override first
+    if (!settings.isVotingActive) {
+      setTimeRemaining("Voting is currently disabled by admin.");
+      setIsVotingPeriod(false);
+      return;
+    }
 
-    updateCountdown();
-  }, [currentTime, votingTimes]);
-
-  // Format time difference into hours, minutes, and seconds
-  const formatTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    return `${hours.toString().padStart(2, "0")}:${minutes
-      .toString()
-      .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-  };
+    if (currentTime.getTime() < votingStartTime.getTime()) {
+      const timeDiff = votingStartTime.getTime() - currentTime.getTime();
+      setTimeRemaining(formatTime(timeDiff));
+      setIsVotingPeriod(false);
+    } else if (
+      currentTime.getTime() >= votingStartTime.getTime() &&
+      currentTime.getTime() <= votingEndTime.getTime()
+    ) {
+      const timeDiff = votingEndTime.getTime() - currentTime.getTime();
+      setTimeRemaining(formatTime(timeDiff));
+      setIsVotingPeriod(true);
+    } else {
+      setTimeRemaining("Voting has ended.");
+      setIsVotingPeriod(false);
+    }
+  }, [currentTime, settingsData]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -103,29 +96,27 @@ export default function HomePage() {
       return;
     }
 
+    // Check if user has already voted
     const existingVote = localStorage.getItem("voteRecord");
     if (existingVote) {
       alert("You have already voted. Login is restricted.");
       return;
     }
 
-    // Save data to localStorage
-    localStorage.setItem("voterData", JSON.stringify(formData));
-
-    // Save data to mock API
-    await fetch("https://65130c258e505cebc2e981a1.mockapi.io/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        matricNumber: formData.matricNumber.toLowerCase(),
-        fullName: formData.fullName,
-        department: formData.department,
-        image: formData.image,
-      }),
-    });
-
-    // Redirect to voting page
-    window.location.href = "/vote";
+    try {
+      const result = await registerUser(formData);
+      
+      if (result.success) {
+        // Save user data and login time
+        localStorage.setItem("voterData", JSON.stringify(result.user));
+        localStorage.setItem("loginTime", Date.now().toString());
+        
+        // Redirect to voting page
+        window.location.href = "/vote";
+      }
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Registration failed. Please try again.");
+    }
   };
 
   return (
@@ -190,6 +181,7 @@ export default function HomePage() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.matricNumber}
+              disabled={registering}
             />
           </div>
           
@@ -201,6 +193,7 @@ export default function HomePage() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.fullName}
+              disabled={registering}
             />
           </div>
           
@@ -212,6 +205,7 @@ export default function HomePage() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.department}
+              disabled={registering}
             />
           </div>
 
@@ -268,19 +262,20 @@ export default function HomePage() {
                   });
                 }
               }}
+              disabled={registering}
             />
           </div>
 
           <button
             type="submit"
             className={`w-full py-3 px-4 rounded-lg font-semibold transition duration-200 ${
-              isVotingPeriod
+              isVotingPeriod && !registering
                 ? "bg-blue-500 hover:bg-blue-600 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                 : "bg-gray-300 text-gray-500 cursor-not-allowed"
             }`}
-            disabled={!isVotingPeriod}
+            disabled={!isVotingPeriod || registering}
           >
-            {isVotingPeriod ? "Login & Vote" : "Voting Closed"}
+            {registering ? "Registering..." : isVotingPeriod ? "Login & Vote" : "Voting Closed"}
           </button>
         </form>
 

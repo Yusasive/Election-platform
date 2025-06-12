@@ -12,19 +12,22 @@
     "axios": "^1.7.7",
     "dayjs": "^1.11.13",
     "framer-motion": "^11.11.17",
-    "msw": "^2.6.4",
+    "mongoose": "^8.0.3",
     "next": "15.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-timer-hook": "^3.0.8"
+    "react-timer-hook": "^3.0.8",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.5",
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
-    "json-server": "^1.0.0-beta.3",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
