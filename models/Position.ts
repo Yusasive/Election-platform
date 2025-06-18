@@ -27,7 +27,7 @@ const PositionSchema = new Schema<IPosition>({
   timestamps: true,
 });
 
-// Create indexes
+// Remove duplicate indexes - only use schema.index()
 PositionSchema.index({ position: 1 });
 PositionSchema.index({ isActive: 1 });
 

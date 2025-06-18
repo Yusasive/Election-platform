@@ -66,26 +66,29 @@ export default function VotingPage() {
   const [hasRedirected, setHasRedirected] = useState(false);
   const [lastToastTime, setLastToastTime] = useState(0);
   const [candidatesLoaded, setCandidatesLoaded] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-  // Fetch candidates from database with better error handling
+  // Fetch candidates from database with better error handling and timeout
   const { data: candidatesData, loading: loadingCandidates, error: candidatesError, refetch: refetchCandidates } = useApi<{
     success: boolean;
     positions: Position[];
   }>('/candidates', { 
     immediate: true,
     onSuccess: (data) => {
-      if (data?.success && data?.positions) {
+      if (data?.success && Array.isArray(data?.positions)) {
         setCandidatesLoaded(true);
+        setRetryCount(0);
         toast.success("Candidates loaded successfully!", { duration: 2000 });
       } else {
         setCandidatesLoaded(false);
-        toast.error("Failed to load candidates data");
+        toast.error("Invalid candidates data received");
       }
     },
     onError: (error) => {
       setCandidatesLoaded(false);
       console.error("Candidates fetch error:", error);
-      toast.error("Failed to load candidates. Please refresh the page.");
+      const errorMsg = error.response?.data?.error || "Failed to load candidates";
+      toast.error(`${errorMsg}. Retrying...`, { duration: 4000 });
     }
   });
 
@@ -159,6 +162,20 @@ export default function VotingPage() {
       setLastToastTime(now);
     }
   }, [lastToastTime]);
+
+  // Auto-retry candidates loading with exponential backoff
+  useEffect(() => {
+    if (candidatesError && !loadingCandidates && !candidatesLoaded && retryCount < 3) {
+      const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Max 10 seconds
+      const retryTimer = setTimeout(() => {
+        setRetryCount(prev => prev + 1);
+        toast.info(`Retrying to load candidates... (${retryCount + 1}/3)`);
+        refetchCandidates();
+      }, retryDelay);
+
+      return () => clearTimeout(retryTimer);
+    }
+  }, [candidatesError, loadingCandidates, candidatesLoaded, retryCount, refetchCandidates]);
 
   // Initial setup and validation
   useEffect(() => {
@@ -366,25 +383,13 @@ export default function VotingPage() {
 
   // Handle errors and retry logic
   useEffect(() => {
-    if (candidatesError) {
-      toast.error("Failed to load candidates. Click 'Retry' to try again.", { duration: 6000 });
+    if (candidatesError && retryCount >= 3) {
+      toast.error("Failed to load candidates after multiple attempts. Please refresh the page.", { duration: 8000 });
     }
     if (settingsError) {
       toast.error("Failed to load election settings. Please refresh the page.", { duration: 6000 });
     }
-  }, [candidatesError, settingsError]);
-
-  // Auto-retry candidates loading if failed
-  useEffect(() => {
-    if (candidatesError && !loadingCandidates && !candidatesLoaded) {
-      const retryTimer = setTimeout(() => {
-        toast.info("Retrying to load candidates...");
-        refetchCandidates();
-      }, 5000);
-
-      return () => clearTimeout(retryTimer);
-    }
-  }, [candidatesError, loadingCandidates, candidatesLoaded, refetchCandidates]);
+  }, [candidatesError, settingsError, retryCount]);
 
   // Loading state with better error handling
   if (loadingCandidates || !voterData || !electionSettings) {
@@ -399,17 +404,24 @@ export default function VotingPage() {
           <p className="text-gray-600 font-medium">Loading voting interface...</p>
           <p className="text-sm text-gray-500 mt-2">Please wait while we prepare your ballot</p>
           
-          {candidatesError && (
+          {candidatesError && retryCount > 0 && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-700 text-sm">Retrying... ({retryCount}/3)</p>
+            </div>
+          )}
+          
+          {candidatesError && retryCount >= 3 && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-red-700 text-sm">Failed to load candidates</p>
               <button
                 onClick={() => {
+                  setRetryCount(0);
                   toast.loading("Retrying...");
                   refetchCandidates();
                 }}
                 className="mt-2 bg-red-500 text-white px-4 py-2 rounded text-sm hover:bg-red-600"
               >
-                Retry
+                Try Again
               </button>
             </div>
           )}
@@ -418,8 +430,8 @@ export default function VotingPage() {
     );
   }
 
-  // Show error state if candidates failed to load
-  if (candidatesError && !candidatesLoaded) {
+  // Show error state if candidates failed to load after all retries
+  if (candidatesError && !candidatesLoaded && retryCount >= 3) {
     return (
       <main className="flex justify-center items-center h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <motion.div
@@ -429,11 +441,13 @@ export default function VotingPage() {
         >
           <div className="text-6xl mb-4">⚠️</div>
           <h2 className="text-xl font-bold text-gray-800 mb-2">Failed to Load Candidates</h2>
-          <p className="text-gray-600 mb-4">We couldn't load the candidate data. Please try again.</p>
+          <p className="text-gray-600 mb-4">We couldn't load the candidate data after multiple attempts.</p>
           
           <div className="space-y-3">
             <button
               onClick={() => {
+                setRetryCount(0);
+                setCandidatesLoaded(false);
                 toast.loading("Retrying...");
                 refetchCandidates();
               }}

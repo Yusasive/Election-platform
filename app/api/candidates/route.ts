@@ -8,24 +8,33 @@ export async function GET() {
   try {
     await connectDB();
 
-    // Get all positions with their candidates
-    const positions = await Position.find({ isActive: true }).sort({ position: 1 });
-    const candidates = await Candidate.find({}).sort({ id: 1 });
+    // Use Promise.all for parallel queries to improve performance
+    const [positions, candidates] = await Promise.all([
+      Position.find({ isActive: true }).sort({ position: 1 }).lean(),
+      Candidate.find({}).sort({ id: 1 }).lean()
+    ]);
 
-    // Group candidates by position
+    // Group candidates by position more efficiently
+    const candidatesByPosition = candidates.reduce((acc, candidate) => {
+      if (!acc[candidate.position]) {
+        acc[candidate.position] = [];
+      }
+      acc[candidate.position].push({
+        id: candidate.id,
+        name: candidate.name,
+        nickname: candidate.nickname || '',
+        image: candidate.image || '',
+        department: candidate.department || '',
+        level: candidate.level || '',
+        position: candidate.position,
+      });
+      return acc;
+    }, {} as Record<string, any[]>);
+
     const positionsWithCandidates = positions.map(pos => ({
       position: pos.position,
       allowMultiple: pos.allowMultiple,
-      candidates: candidates.filter(candidate => candidate.position === pos.position)
-        .map(candidate => ({
-          id: candidate.id,
-          name: candidate.name,
-          nickname: candidate.nickname || '',
-          image: candidate.image || '',
-          department: candidate.department || '',
-          level: candidate.level || '',
-          position: candidate.position,
-        })),
+      candidates: candidatesByPosition[pos.position] || [],
     }));
 
     return NextResponse.json({
@@ -55,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if position exists
-    const existingPosition = await Position.findOne({ position });
+    const existingPosition = await Position.findOne({ position }).lean();
     if (!existingPosition) {
       return NextResponse.json(
         { error: 'Position does not exist' },
@@ -64,7 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get next candidate ID
-    const lastCandidate = await Candidate.findOne().sort({ id: -1 });
+    const lastCandidate = await Candidate.findOne().sort({ id: -1 }).lean();
     const nextId = lastCandidate ? lastCandidate.id + 1 : 1;
 
     // Create new candidate
@@ -127,7 +136,7 @@ export async function PUT(request: NextRequest) {
       { id },
       updateData,
       { new: true }
-    );
+    ).lean();
 
     if (!candidate) {
       return NextResponse.json(

@@ -51,7 +51,7 @@ const CandidateSchema = new Schema<ICandidate>({
   timestamps: true,
 });
 
-// Create indexes
+// Remove duplicate indexes - only use schema.index()
 CandidateSchema.index({ position: 1 });
 CandidateSchema.index({ id: 1 });
 CandidateSchema.index({ department: 1 });
