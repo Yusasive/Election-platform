@@ -24,12 +24,12 @@ export default function SetupPage() {
       const data = await response.json();
 
       if (data.success) {
-        setMessage("Database seeded successfully! You can now use the application.");
+        setMessage("Database initialized successfully! Admin can now add candidates through the dashboard.");
       } else {
-        setError(data.error || "Failed to seed database");
+        setError(data.error || "Failed to initialize database");
       }
     } catch (error) {
-      setError("Network error occurred while seeding database");
+      setError("Network error occurred while initializing database");
     } finally {
       setSeeding(false);
     }
@@ -50,7 +50,7 @@ export default function SetupPage() {
             Database Setup
           </h1>
           <p className="text-gray-600">
-            Initialize the election platform with default data
+            Initialize the election platform for fresh candidate entry
           </p>
         </div>
 
@@ -58,11 +58,18 @@ export default function SetupPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h3 className="font-semibold text-blue-800 mb-2">What this will do:</h3>
             <ul className="text-sm text-blue-700 space-y-1">
-              <li>• Create default election positions</li>
-              <li>• Add sample candidates</li>
+              <li>• Create basic election positions</li>
               <li>• Set up election settings</li>
-              <li>• Initialize the database</li>
+              <li>• Initialize empty database</li>
+              <li>• Enable admin to add fresh candidates</li>
             </ul>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h3 className="font-semibold text-yellow-800 mb-2">Note:</h3>
+            <p className="text-sm text-yellow-700">
+              No sample candidates will be added. Admin must create all candidates through the dashboard.
+            </p>
           </div>
 
           {message && (
@@ -85,17 +92,23 @@ export default function SetupPage() {
             {seeding ? (
               <div className="flex items-center justify-center space-x-2">
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Setting up database...</span>
+                <span>Initializing database...</span>
               </div>
             ) : (
-              "Initialize Database"
+              "Initialize Fresh Database"
             )}
           </button>
 
-          <div className="text-center">
+          <div className="text-center space-y-2">
+            <a
+              href="/admin"
+              className="block text-blue-500 hover:text-blue-600 text-sm font-medium"
+            >
+              Go to Admin Dashboard →
+            </a>
             <a
               href="/"
-              className="text-blue-500 hover:text-blue-600 text-sm font-medium"
+              className="block text-gray-500 hover:text-gray-600 text-sm"
             >
               ← Back to Home
             </a>

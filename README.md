@@ -28,7 +28,7 @@ npm install
 
 ### 3. Initialize Database
 
-Visit `http://localhost:3000/setup` after starting the development server to seed the database with initial data.
+Visit `http://localhost:3000/setup` after starting the development server to initialize the database.
 
 ### 4. Start Development Server
 
@@ -36,13 +36,20 @@ Visit `http://localhost:3000/setup` after starting the development server to see
 npm run dev
 ```
 
+### 5. Add Candidates
+
+1. Go to `/admin` and login
+2. Navigate to "Candidate Management"
+3. Create positions and add candidates with full details
+
 ## 📋 Setup Checklist
 
 - [ ] MongoDB database created
 - [ ] Environment variables configured
 - [ ] Dependencies installed
-- [ ] Database seeded via `/setup` page
+- [ ] Database initialized via `/setup` page
 - [ ] Admin login tested (`/admin`)
+- [ ] Candidates added through admin dashboard
 - [ ] Student voting flow tested
 
 ## 🔧 Configuration
@@ -62,11 +69,14 @@ npm run dev
 
 ## 🎯 Key Features
 
+- **Fresh Candidate Entry**: Admin creates all candidates from scratch
+- **Rich Candidate Profiles**: Name, nickname, image, department, level
 - **Real-time Voting**: Live status updates and countdown timers
 - **Admin Dashboard**: Complete election management
 - **Secure Authentication**: JWT-based admin auth
 - **Vote Analytics**: Real-time statistics and reporting
 - **Mobile Responsive**: Works on all devices
+- **Toast Notifications**: Better user feedback
 
 ## 🔍 Troubleshooting
 
@@ -82,9 +92,15 @@ npm run dev
 2. Check admin credentials in `.env.local`
 3. Clear browser localStorage and try again
 
+### No Candidates Showing
+
+1. Ensure database is properly initialized via `/setup`
+2. Add candidates through Admin Dashboard → Candidate Management
+3. Check that positions are created first
+
 ### Voting Not Reflecting
 
-1. Ensure database is properly seeded
+1. Ensure candidates are added through admin dashboard
 2. Check admin time settings
 3. Verify voting is enabled in admin panel
 
@@ -102,22 +118,30 @@ npm run dev
 └── hooks/                 # Custom React hooks
 ```
 
-## 🛠 Development
+## 🛠 Development Workflow
 
-### Adding New Positions
+### 1. Initial Setup
+1. Run `/setup` to initialize database
+2. Login to admin dashboard
+3. Create election positions
+4. Add candidates with full details
 
+### 2. Adding Candidates
 1. Go to Admin Dashboard → Candidate Management
-2. Add new position with settings
-3. Add candidates to the position
+2. Create positions first (if not already created)
+3. Add candidates with:
+   - Full Name (required)
+   - Nickname (optional)
+   - Image upload
+   - Department
+   - Level (e.g., 100L, 200L)
 
-### Modifying Vote Times
+### 3. Managing Elections
+1. Set voting times in Time Management
+2. Enable/disable voting as needed
+3. Monitor votes in real-time
 
-1. Go to Admin Dashboard → Time Management
-2. Set start/end times
-3. Use emergency controls if needed
-
-### Viewing Results
-
+### 4. Viewing Results
 1. Go to Admin Dashboard → Voting Analytics
 2. Export data as CSV if needed
 3. Monitor real-time vote counts
@@ -128,6 +152,7 @@ npm run dev
 2. Set environment variables in deployment platform
 3. Ensure MongoDB is accessible from production
 4. Run database setup on first deployment
+5. Add candidates through admin dashboard
 
 ## 📞 Support
 
@@ -135,3 +160,4 @@ For issues or questions:
 1. Check the troubleshooting section
 2. Verify environment setup
 3. Check browser console for errors
+4. Ensure candidates are added through admin dashboard (not JSON)
