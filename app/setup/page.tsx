@@ -24,7 +24,7 @@ export default function SetupPage() {
       const data = await response.json();
 
       if (data.success) {
-        setMessage("Database initialized successfully! Admin can now add candidates through the dashboard.");
+        setMessage("Database initialized successfully! Admin can now create positions and add candidates from scratch.");
       } else {
         setError(data.error || "Failed to initialize database");
       }
@@ -44,31 +44,31 @@ export default function SetupPage() {
       >
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <span className="text-3xl text-white">⚙️</span>
+            <span className="text-3xl text-white">🆕</span>
           </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            Database Setup
+            Fresh Database Setup
           </h1>
           <p className="text-gray-600">
-            Initialize the election platform for fresh candidate entry
+            Initialize completely empty database for fresh election setup
           </p>
         </div>
 
         <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-800 mb-2">What this will do:</h3>
-            <ul className="text-sm text-blue-700 space-y-1">
-              <li>• Create basic election positions</li>
-              <li>• Set up election settings</li>
-              <li>• Initialize empty database</li>
-              <li>• Enable admin to add fresh candidates</li>
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <h3 className="font-semibold text-green-800 mb-2">What this will do:</h3>
+            <ul className="text-sm text-green-700 space-y-1">
+              <li>• Create basic election settings only</li>
+              <li>• Initialize completely empty database</li>
+              <li>• No default positions or candidates</li>
+              <li>• Admin creates everything from scratch</li>
             </ul>
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h3 className="font-semibold text-yellow-800 mb-2">Note:</h3>
-            <p className="text-sm text-yellow-700">
-              No sample candidates will be added. Admin must create all candidates through the dashboard.
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-800 mb-2">Fresh Start:</h3>
+            <p className="text-sm text-blue-700">
+              Admin will create all positions and candidates through the dashboard. No pre-existing data.
             </p>
           </div>
 
@@ -87,15 +87,15 @@ export default function SetupPage() {
           <button
             onClick={seedDatabase}
             disabled={seeding}
-            className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-xl font-semibold hover:from-green-600 hover:to-emerald-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {seeding ? (
               <div className="flex items-center justify-center space-x-2">
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Initializing database...</span>
+                <span>Initializing fresh database...</span>
               </div>
             ) : (
-              "Initialize Fresh Database"
+              "🆕 Initialize Fresh Database"
             )}
           </button>
 
