@@ -19,6 +19,14 @@ interface ElectionSettings {
   loginDuration: number;
 }
 
+interface ExistingUser {
+  id: string;
+  matricNumber: string;
+  fullName: string;
+  department: string;
+  hasVoted: boolean;
+}
+
 export default function HomePage() {
   const [formData, setFormData] = useState<FormData>({
     matricNumber: "",
@@ -30,6 +38,7 @@ export default function HomePage() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [timeRemaining, setTimeRemaining] = useState("");
   const [isVotingPeriod, setIsVotingPeriod] = useState(false);
+  const [checkingUser, setCheckingUser] = useState(false);
 
   // Fetch election settings from database
   const { data: settingsData, loading: settingsLoading, refetch: refetchSettings } = useApi<{
@@ -39,6 +48,9 @@ export default function HomePage() {
 
   // User registration mutation
   const { mutate: registerUser, loading: registering } = useApiMutation('/users');
+
+  // User lookup mutation
+  const { mutate: lookupUser, loading: lookingUpUser } = useApiMutation('/users');
 
   // Update current time every second and refetch settings periodically
   useEffect(() => {
@@ -128,16 +140,6 @@ export default function HomePage() {
       return false;
     }
 
-    if (!formData.fullName.trim()) {
-      toast.error("Please enter your full name");
-      return false;
-    }
-
-    if (!formData.department.trim()) {
-      toast.error("Please enter your department");
-      return false;
-    }
-
     // Validate matric number format (basic validation)
     const matricRegex = /^[a-zA-Z0-9]{6,15}$/;
     if (!matricRegex.test(formData.matricNumber)) {
@@ -148,6 +150,27 @@ export default function HomePage() {
     return true;
   };
 
+  const checkUserInDatabase = async (matricNumber: string): Promise<ExistingUser | null> => {
+    try {
+      const result = await lookupUser({
+        method: 'GET',
+      }, null, {
+        url: `/users?matricNumber=${encodeURIComponent(matricNumber.toLowerCase())}`
+      });
+
+      if (result.success && result.user) {
+        return result.user;
+      }
+      return null;
+    } catch (error: any) {
+      // User not found is expected for new users
+      if (error.response?.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  };
+
   const handleLogin = async () => {
     // Check voting period first
     if (!isVotingPeriod) {
@@ -155,40 +178,85 @@ export default function HomePage() {
       return;
     }
 
-    // Validate form
+    // Validate matric number first
     if (!validateForm()) {
       return;
     }
 
-    // Check if user has already voted
+    // Check if user has already voted (localStorage check)
     const existingVote = localStorage.getItem("voteRecord");
     if (existingVote) {
       toast.error("You have already voted. Login is restricted.");
       return;
     }
 
-    const loadingToast = toast.loading("Registering and logging you in...");
+    setCheckingUser(true);
+    const loadingToast = toast.loading("Checking your registration status...");
 
     try {
-      const result = await registerUser(formData);
-      
-      if (result.success) {
-        // Save user data, login time, and settings
-        localStorage.setItem("voterData", JSON.stringify(result.user));
+      // Step 1: Check if user exists in database
+      const existingUser = await checkUserInDatabase(formData.matricNumber);
+
+      if (existingUser) {
+        // User exists - check voting status
+        if (existingUser.hasVoted) {
+          toast.error("This matric number has already voted!", { id: loadingToast });
+          setCheckingUser(false);
+          return;
+        }
+
+        // User exists and hasn't voted - proceed to voting
+        toast.success("Welcome back! Redirecting to voting page...", { id: loadingToast });
+        
+        // Save user data and login time
+        localStorage.setItem("voterData", JSON.stringify(existingUser));
         localStorage.setItem("loginTime", Date.now().toString());
         localStorage.setItem("electionSettings", JSON.stringify(settingsData.settings));
-        
-        toast.success("Login successful! Redirecting to voting page...", { id: loadingToast });
         
         // Small delay to show success message before redirect
         setTimeout(() => {
           window.location.href = "/vote";
         }, 1000);
+        
+      } else {
+        // User doesn't exist - need full registration
+        if (!formData.fullName.trim()) {
+          toast.error("Please enter your full name for registration", { id: loadingToast });
+          setCheckingUser(false);
+          return;
+        }
+
+        if (!formData.department.trim()) {
+          toast.error("Please enter your department for registration", { id: loadingToast });
+          setCheckingUser(false);
+          return;
+        }
+
+        toast.loading("Registering new user...", { id: loadingToast });
+
+        // Register new user
+        const result = await registerUser(formData);
+        
+        if (result.success) {
+          // Save user data, login time, and settings
+          localStorage.setItem("voterData", JSON.stringify(result.user));
+          localStorage.setItem("loginTime", Date.now().toString());
+          localStorage.setItem("electionSettings", JSON.stringify(settingsData.settings));
+          
+          toast.success("Registration successful! Redirecting to voting page...", { id: loadingToast });
+          
+          // Small delay to show success message before redirect
+          setTimeout(() => {
+            window.location.href = "/vote";
+          }, 1000);
+        }
       }
     } catch (error: any) {
-      console.error("Registration error:", error);
-      const errorMessage = error.response?.data?.error || "Registration failed. Please try again.";
+      console.error("Login/Registration error:", error);
+      const errorMessage = error.response?.data?.error || "An error occurred. Please try again.";
       toast.error(errorMessage, { id: loadingToast });
+    } finally {
+      setCheckingUser(false);
     }
   };
 
@@ -205,6 +273,8 @@ export default function HomePage() {
       </main>
     );
   }
+
+  const isProcessing = registering || lookingUpUser || checkingUser;
 
   return (
     <main className="flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 min-h-screen">
@@ -271,8 +341,9 @@ export default function HomePage() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.matricNumber}
-              disabled={registering}
+              disabled={isProcessing}
               maxLength={15}
+              required
             />
           </div>
           
@@ -280,26 +351,32 @@ export default function HomePage() {
             <input
               type="text"
               name="fullName"
-              placeholder="Full Name"
+              placeholder="Full Name (required for new users)"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.fullName}
-              disabled={registering}
+              disabled={isProcessing}
               maxLength={100}
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Only required if you're registering for the first time
+            </p>
           </div>
           
           <div>
             <input
               type="text"
               name="department"
-              placeholder="Department (e.g., Computer Science)"
+              placeholder="Department (required for new users)"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.department}
-              disabled={registering}
+              disabled={isProcessing}
               maxLength={100}
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Only required if you're registering for the first time
+            </p>
           </div>
 
           <div className="relative">
@@ -355,23 +432,27 @@ export default function HomePage() {
               accept="image/*"
               className="hidden"
               onChange={handleImageUpload}
-              disabled={registering}
+              disabled={isProcessing}
             />
           </div>
 
           <button
             type="submit"
             className={`w-full py-3 px-4 rounded-lg font-semibold transition duration-200 ${
-              isVotingPeriod && !registering
+              isVotingPeriod && !isProcessing
                 ? "bg-blue-500 hover:bg-blue-600 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                 : "bg-gray-300 text-gray-500 cursor-not-allowed"
             }`}
-            disabled={!isVotingPeriod || registering}
+            disabled={!isVotingPeriod || isProcessing}
           >
-            {registering ? (
+            {isProcessing ? (
               <div className="flex items-center justify-center space-x-2">
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Registering...</span>
+                <span>
+                  {checkingUser ? "Checking registration..." : 
+                   lookingUpUser ? "Looking up user..." : 
+                   registering ? "Registering..." : "Processing..."}
+                </span>
               </div>
             ) : isVotingPeriod ? (
               "Login & Vote"
@@ -429,22 +510,22 @@ Time Remaining: ${timeRemaining}
           </div>
         </div>
 
-        {/* Help Section */}
+        {/* Enhanced Help Section */}
         <div className="mt-6 bg-gray-50 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-2">Need Help?</h3>
+          <h3 className="text-sm font-semibold text-gray-800 mb-2">How it works:</h3>
           <div className="text-xs text-gray-600 space-y-1">
-            <p>• Ensure your matric number is correct</p>
-            <p>• Use your full legal name as registered</p>
-            <p>• Department should match your faculty records</p>
-            <p>• Image upload is optional but recommended</p>
+            <p>• <strong>Returning voters:</strong> Just enter your matric number</p>
+            <p>• <strong>First-time voters:</strong> Fill all fields for registration</p>
+            <p>• <strong>Security:</strong> Each matric number can only vote once</p>
+            <p>• <strong>Verification:</strong> We check your registration status automatically</p>
           </div>
           <button
             onClick={() => {
-              toast.success("Help information displayed above ↑");
+              toast.info("Your matric number is checked against our database first. If you're already registered and haven't voted, you'll proceed directly. If you're new, you'll need to complete registration.", { duration: 6000 });
             }}
             className="mt-2 text-xs text-blue-500 hover:text-blue-600 transition duration-200"
           >
-            Show validation tips
+            Show security details
           </button>
         </div>
       </div>
