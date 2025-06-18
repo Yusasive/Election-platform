@@ -53,11 +53,11 @@ export default function CandidateManagement() {
     level: string;
   } | null>(null);
 
-  // API hooks
+  // API hooks with optimized settings
   const { data: candidatesData, loading: loadingCandidates, refetch: refetchCandidates } = useApi<{
     success: boolean;
     positions: Position[];
-  }>('/candidates');
+  }>('/candidates', { immediate: true });
 
   const { mutate: createPosition, loading: creatingPosition } = useApiMutation('/positions');
   const { mutate: deletePosition, loading: deletingPosition } = useApiMutation('/positions');
@@ -65,6 +65,7 @@ export default function CandidateManagement() {
   const { mutate: updateCandidate, loading: updatingCandidate } = useApiMutation('/candidates');
   const { mutate: deleteCandidate, loading: deletingCandidate } = useApiMutation('/candidates');
 
+  // Update positions immediately when data changes
   useEffect(() => {
     if (candidatesData?.positions) {
       setPositions(candidatesData.positions);
@@ -77,13 +78,29 @@ export default function CandidateManagement() {
       return;
     }
 
+    const loadingToast = toast.loading("Creating position...");
+    
     try {
-      await createPosition(newPosition);
-      setNewPosition({ position: "", allowMultiple: false });
-      refetchCandidates();
-      toast.success("Position created successfully!");
+      const result = await createPosition(newPosition);
+      
+      if (result.success) {
+        setNewPosition({ position: "", allowMultiple: false });
+        // Immediately update local state for better UX
+        const newPos: Position = {
+          position: result.position.position,
+          allowMultiple: result.position.allowMultiple,
+          candidates: []
+        };
+        setPositions(prev => [...prev, newPos]);
+        
+        toast.success("Position created successfully!", { id: loadingToast });
+        
+        // Refetch in background to ensure consistency
+        setTimeout(() => refetchCandidates(), 500);
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || "Failed to create position");
+      console.error("Position creation error:", error);
+      toast.error(error.response?.data?.error || "Failed to create position", { id: loadingToast });
     }
   };
 
@@ -92,16 +109,26 @@ export default function CandidateManagement() {
       return;
     }
 
+    const loadingToast = toast.loading("Deleting position...");
+
     try {
-      await deletePosition({
+      const result = await deletePosition({
         method: 'DELETE',
       }, null, {
         url: `/positions?position=${encodeURIComponent(positionName)}`
       });
-      refetchCandidates();
-      toast.success("Position deleted successfully!");
+
+      if (result.success) {
+        // Immediately update local state
+        setPositions(prev => prev.filter(p => p.position !== positionName));
+        toast.success("Position deleted successfully!", { id: loadingToast });
+        
+        // Refetch in background
+        setTimeout(() => refetchCandidates(), 500);
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || "Failed to delete position");
+      console.error("Position deletion error:", error);
+      toast.error(error.response?.data?.error || "Failed to delete position", { id: loadingToast });
     }
   };
 
@@ -111,22 +138,42 @@ export default function CandidateManagement() {
       return;
     }
 
+    const loadingToast = toast.loading("Adding candidate...");
+
     try {
-      await createCandidate({
+      const result = await createCandidate({
         ...newCandidate,
         position: selectedPosition,
       });
-      setNewCandidate({
-        name: "",
-        nickname: "",
-        image: "",
-        department: "",
-        level: "",
-      });
-      refetchCandidates();
-      toast.success("Candidate added successfully!");
+
+      if (result.success) {
+        setNewCandidate({
+          name: "",
+          nickname: "",
+          image: "",
+          department: "",
+          level: "",
+        });
+
+        // Immediately update local state
+        setPositions(prev => prev.map(pos => {
+          if (pos.position === selectedPosition) {
+            return {
+              ...pos,
+              candidates: [...pos.candidates, result.candidate]
+            };
+          }
+          return pos;
+        }));
+
+        toast.success("Candidate added successfully!", { id: loadingToast });
+        
+        // Refetch in background
+        setTimeout(() => refetchCandidates(), 500);
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || "Failed to add candidate");
+      console.error("Candidate creation error:", error);
+      toast.error(error.response?.data?.error || "Failed to add candidate", { id: loadingToast });
     }
   };
 
@@ -135,16 +182,30 @@ export default function CandidateManagement() {
       return;
     }
 
+    const loadingToast = toast.loading("Deleting candidate...");
+
     try {
-      await deleteCandidate({
+      const result = await deleteCandidate({
         method: 'DELETE',
       }, null, {
         url: `/candidates?id=${candidateId}`
       });
-      refetchCandidates();
-      toast.success("Candidate deleted successfully!");
+
+      if (result.success) {
+        // Immediately update local state
+        setPositions(prev => prev.map(pos => ({
+          ...pos,
+          candidates: pos.candidates.filter(c => c.id !== candidateId)
+        })));
+
+        toast.success("Candidate deleted successfully!", { id: loadingToast });
+        
+        // Refetch in background
+        setTimeout(() => refetchCandidates(), 500);
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || "Failed to delete candidate");
+      console.error("Candidate deletion error:", error);
+      toast.error(error.response?.data?.error || "Failed to delete candidate", { id: loadingToast });
     }
   };
 
@@ -162,21 +223,43 @@ export default function CandidateManagement() {
   const saveEditCandidate = async () => {
     if (!editingCandidate) return;
 
+    const loadingToast = toast.loading("Updating candidate...");
+
     try {
-      await updateCandidate({
+      const result = await updateCandidate({
         method: 'PUT',
       }, editingCandidate);
-      setEditingCandidate(null);
-      refetchCandidates();
-      toast.success("Candidate updated successfully!");
+
+      if (result.success) {
+        // Immediately update local state
+        setPositions(prev => prev.map(pos => ({
+          ...pos,
+          candidates: pos.candidates.map(c => 
+            c.id === editingCandidate.id ? result.candidate : c
+          )
+        })));
+
+        setEditingCandidate(null);
+        toast.success("Candidate updated successfully!", { id: loadingToast });
+        
+        // Refetch in background
+        setTimeout(() => refetchCandidates(), 500);
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || "Failed to update candidate");
+      console.error("Candidate update error:", error);
+      toast.error(error.response?.data?.error || "Failed to update candidate", { id: loadingToast });
     }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = (event) => {
         const imageUrl = event.target?.result as string;
@@ -207,9 +290,23 @@ export default function CandidateManagement() {
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">
-          👥 Candidate Management
-        </h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">
+            👥 Candidate Management
+          </h2>
+          <button
+            onClick={() => {
+              toast.loading("Refreshing data...");
+              refetchCandidates().then(() => {
+                toast.dismiss();
+                toast.success("Data refreshed!");
+              });
+            }}
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition duration-200"
+          >
+            Refresh
+          </button>
+        </div>
 
         {/* Add New Position */}
         <div className="bg-blue-50 rounded-lg p-6 mb-8">
@@ -302,14 +399,21 @@ export default function CandidateManagement() {
               disabled={creatingCandidate}
             />
             
-            <input
-              type="text"
-              placeholder="Level (e.g., 100L, 200L)"
+            <select
               value={newCandidate.level}
               onChange={(e) => setNewCandidate({ ...newCandidate, level: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
               disabled={creatingCandidate}
-            />
+            >
+              <option value="">Select Level</option>
+              <option value="100L">100L</option>
+              <option value="200L">200L</option>
+              <option value="300L">300L</option>
+              <option value="400L">400L</option>
+              <option value="500L">500L</option>
+              <option value="600L">600L</option>
+              <option value="Graduate">Graduate</option>
+            </select>
 
             <div className="relative">
               <input
@@ -361,7 +465,7 @@ export default function CandidateManagement() {
                   <p className="text-sm text-gray-600">
                     {position.allowMultiple
                       ? "Multiple selections allowed"
-                      : "Single selection only"}
+                      : "Single selection only"} • {position.candidates.length} candidates
                   </p>
                 </div>
                 <button
@@ -377,7 +481,7 @@ export default function CandidateManagement() {
                 {position.candidates.map((candidate) => (
                   <div
                     key={candidate.id}
-                    className="bg-white p-4 rounded-lg shadow-sm border"
+                    className="bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition duration-200"
                   >
                     {editingCandidate?.id === candidate.id ? (
                       <div className="space-y-3">
@@ -435,9 +539,7 @@ export default function CandidateManagement() {
                           disabled={updatingCandidate}
                         />
                         
-                        <input
-                          type="text"
-                          placeholder="Level"
+                        <select
                           value={editingCandidate.level}
                           onChange={(e) =>
                             setEditingCandidate({
@@ -447,7 +549,16 @@ export default function CandidateManagement() {
                           }
                           className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                           disabled={updatingCandidate}
-                        />
+                        >
+                          <option value="">Select Level</option>
+                          <option value="100L">100L</option>
+                          <option value="200L">200L</option>
+                          <option value="300L">300L</option>
+                          <option value="400L">400L</option>
+                          <option value="500L">500L</option>
+                          <option value="600L">600L</option>
+                          <option value="Graduate">Graduate</option>
+                        </select>
 
                         <div>
                           <input
@@ -553,8 +664,9 @@ export default function CandidateManagement() {
 
         {positions.length === 0 && (
           <div className="text-center py-12">
+            <div className="text-6xl mb-4">📋</div>
             <p className="text-gray-500 text-lg">No positions created yet</p>
-            <p className="text-gray-400">Add your first position above</p>
+            <p className="text-gray-400">Add your first position above to get started</p>
           </div>
         )}
       </div>
