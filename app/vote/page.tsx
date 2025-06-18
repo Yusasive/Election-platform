@@ -65,18 +65,40 @@ export default function VotingPage() {
   const [electionSettings, setElectionSettings] = useState<ElectionSettings | null>(null);
   const [hasRedirected, setHasRedirected] = useState(false);
   const [lastToastTime, setLastToastTime] = useState(0);
+  const [candidatesLoaded, setCandidatesLoaded] = useState(false);
 
-  // Fetch candidates from database
-  const { data: candidatesData, loading: loadingCandidates, error: candidatesError } = useApi<{
+  // Fetch candidates from database with better error handling
+  const { data: candidatesData, loading: loadingCandidates, error: candidatesError, refetch: refetchCandidates } = useApi<{
     success: boolean;
     positions: Position[];
-  }>('/candidates');
+  }>('/candidates', { 
+    immediate: true,
+    onSuccess: (data) => {
+      if (data?.success && data?.positions) {
+        setCandidatesLoaded(true);
+        toast.success("Candidates loaded successfully!", { duration: 2000 });
+      } else {
+        setCandidatesLoaded(false);
+        toast.error("Failed to load candidates data");
+      }
+    },
+    onError: (error) => {
+      setCandidatesLoaded(false);
+      console.error("Candidates fetch error:", error);
+      toast.error("Failed to load candidates. Please refresh the page.");
+    }
+  });
 
   // Fetch current settings with real-time updates
   const { data: settingsData, refetch: refetchSettings, error: settingsError } = useApi<{
     success: boolean;
     settings: ElectionSettings;
-  }>('/settings');
+  }>('/settings', {
+    onError: (error) => {
+      console.error("Settings fetch error:", error);
+      toast.error("Failed to load election settings");
+    }
+  });
 
   // Submit vote mutation
   const { mutate: submitVote, loading: submittingVote } = useApiMutation('/votes');
@@ -170,7 +192,7 @@ export default function VotingPage() {
         setElectionSettings(parsedSettings);
       }
 
-      toast.success(`Welcome ${parsedVoterData.fullName}! You can now vote.`, { duration: 3000 });
+      toast.success(`Welcome ${parsedVoterData.fullName}! Loading your ballot...`, { duration: 3000 });
     } catch (error) {
       console.error("Error parsing stored data:", error);
       redirectToHome("Invalid session data!");
@@ -268,6 +290,11 @@ export default function VotingPage() {
       return;
     }
 
+    if (!candidatesLoaded) {
+      toast.error("Candidates data not loaded. Please refresh the page.");
+      return;
+    }
+
     if (allowMultiple) {
       const currentSelections = selections[position] || [];
       const updatedSelections = (currentSelections as string[]).includes(candidateId)
@@ -294,7 +321,7 @@ export default function VotingPage() {
       return;
     }
 
-    if (!candidatesData?.positions) {
+    if (!candidatesLoaded || !candidatesData?.success || !candidatesData?.positions) {
       toast.error("Candidates data not loaded. Please refresh the page.");
       return;
     }
@@ -337,28 +364,98 @@ export default function VotingPage() {
     }
   };
 
-  // Handle errors
+  // Handle errors and retry logic
   useEffect(() => {
     if (candidatesError) {
-      toast.error("Failed to load candidates. Please refresh the page.");
+      toast.error("Failed to load candidates. Click 'Retry' to try again.", { duration: 6000 });
     }
     if (settingsError) {
-      toast.error("Failed to load election settings. Please refresh the page.");
+      toast.error("Failed to load election settings. Please refresh the page.", { duration: 6000 });
     }
   }, [candidatesError, settingsError]);
 
-  // Loading state
+  // Auto-retry candidates loading if failed
+  useEffect(() => {
+    if (candidatesError && !loadingCandidates && !candidatesLoaded) {
+      const retryTimer = setTimeout(() => {
+        toast.info("Retrying to load candidates...");
+        refetchCandidates();
+      }, 5000);
+
+      return () => clearTimeout(retryTimer);
+    }
+  }, [candidatesError, loadingCandidates, candidatesLoaded, refetchCandidates]);
+
+  // Loading state with better error handling
   if (loadingCandidates || !voterData || !electionSettings) {
     return (
       <main className="flex justify-center items-center h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-center bg-white rounded-2xl shadow-lg p-8"
+          className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md mx-4"
         >
           <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading voting interface...</p>
           <p className="text-sm text-gray-500 mt-2">Please wait while we prepare your ballot</p>
+          
+          {candidatesError && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm">Failed to load candidates</p>
+              <button
+                onClick={() => {
+                  toast.loading("Retrying...");
+                  refetchCandidates();
+                }}
+                className="mt-2 bg-red-500 text-white px-4 py-2 rounded text-sm hover:bg-red-600"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        </motion.div>
+      </main>
+    );
+  }
+
+  // Show error state if candidates failed to load
+  if (candidatesError && !candidatesLoaded) {
+    return (
+      <main className="flex justify-center items-center h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md mx-4"
+        >
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Failed to Load Candidates</h2>
+          <p className="text-gray-600 mb-4">We couldn't load the candidate data. Please try again.</p>
+          
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                toast.loading("Retrying...");
+                refetchCandidates();
+              }}
+              className="w-full bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition duration-200"
+            >
+              Retry Loading Candidates
+            </button>
+            
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition duration-200"
+            >
+              Refresh Page
+            </button>
+            
+            <button
+              onClick={() => window.location.href = "/"}
+              className="w-full bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition duration-200"
+            >
+              Return to Home
+            </button>
+          </div>
         </motion.div>
       </main>
     );
@@ -444,30 +541,30 @@ export default function VotingPage() {
 
           <div className="flex items-center space-x-3">
             <div className={`p-3 rounded-full ${
-              isVotingOpen ? 'bg-green-100' : 'bg-red-100'
+              isVotingOpen && candidatesLoaded ? 'bg-green-100' : 'bg-red-100'
             }`}>
               <div className={`w-3 h-3 rounded-full ${
-                isVotingOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+                isVotingOpen && candidatesLoaded ? 'bg-green-500 animate-pulse' : 'bg-red-500'
               }`}></div>
             </div>
             <div>
               <p className="text-gray-700 font-medium">Status</p>
               <p className={`font-bold text-lg ${
-                isVotingOpen ? 'text-green-600' : 'text-red-600'
+                isVotingOpen && candidatesLoaded ? 'text-green-600' : 'text-red-600'
               }`}>
-                {isVotingOpen ? 'Active' : 'Closed'}
+                {isVotingOpen && candidatesLoaded ? 'Ready' : 'Not Ready'}
               </p>
             </div>
           </div>
         </div>
 
-        {!isVotingOpen && (
+        {(!isVotingOpen || !candidatesLoaded) && (
           <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-center text-red-700 font-semibold">
-              🚫 Voting is currently closed!
+              {!candidatesLoaded ? "🔄 Loading candidates..." : "🚫 Voting is currently closed!"}
             </p>
             <p className="text-center text-red-600 text-sm mt-1">
-              You will be redirected to the home page shortly.
+              {!candidatesLoaded ? "Please wait while we load the ballot" : "You will be redirected to the home page shortly."}
             </p>
           </div>
         )}
@@ -504,7 +601,7 @@ export default function VotingPage() {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.8, duration: 0.8 }}
       >
-        {candidatesData?.positions?.map((position: Position, index) => (
+        {candidatesData?.success && candidatesData?.positions?.map((position: Position, index) => (
           <motion.div
             key={position.position}
             className="bg-white shadow-lg rounded-2xl p-6 border border-gray-100 hover:shadow-xl transition duration-300"
@@ -612,9 +709,9 @@ export default function VotingPage() {
       >
         <button
           onClick={handleVote}
-          disabled={!isVotingOpen || submittingVote}
+          disabled={!isVotingOpen || !candidatesLoaded || submittingVote}
           className={`px-12 py-4 rounded-xl font-bold text-lg transition duration-300 transform hover:scale-105 ${
-            isVotingOpen && !submittingVote
+            isVotingOpen && candidatesLoaded && !submittingVote
               ? "bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl"
               : "bg-gray-300 text-gray-500 cursor-not-allowed"
           }`}
@@ -624,8 +721,10 @@ export default function VotingPage() {
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
               <span>Submitting Vote...</span>
             </div>
-          ) : isVotingOpen ? (
+          ) : isVotingOpen && candidatesLoaded ? (
             "🗳️ Cast Your Vote"
+          ) : !candidatesLoaded ? (
+            "Loading Candidates..."
           ) : (
             "Voting Closed"
           )}
@@ -635,12 +734,18 @@ export default function VotingPage() {
         <div className="mt-6 flex justify-center space-x-4 text-sm text-gray-500">
           <button
             onClick={() => {
-              refetchSettings();
-              toast.success("Status refreshed!");
+              toast.loading("Refreshing data...");
+              Promise.all([refetchSettings(), refetchCandidates()]).then(() => {
+                toast.dismiss();
+                toast.success("Data refreshed!");
+              }).catch(() => {
+                toast.dismiss();
+                toast.error("Failed to refresh data");
+              });
             }}
             className="hover:text-blue-500 transition duration-200"
           >
-            Refresh Status
+            Refresh Data
           </button>
           <span>•</span>
           <button
@@ -648,7 +753,8 @@ export default function VotingPage() {
               const selectionCount = Object.values(selections).filter(s => 
                 Array.isArray(s) ? s.length > 0 : s
               ).length;
-              toast.info(`You have voted for ${selectionCount} positions`, { duration: 3000 });
+              const totalPositions = candidatesData?.positions?.length || 0;
+              toast.info(`Progress: ${selectionCount}/${totalPositions} positions voted`, { duration: 3000 });
             }}
             className="hover:text-blue-500 transition duration-200"
           >
