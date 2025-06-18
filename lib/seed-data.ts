@@ -43,24 +43,150 @@ const defaultPositions = [
 ];
 
 const defaultCandidates = [
-  { id: 1, name: "Aiyenimelo Samuel Oluwapelumi", position: "General Secretary" },
-  { id: 2, name: "Oke Phillip Olamilekan", position: "Sport Secretary" },
-  { id: 3, name: "Abdulazeez Abdulsalam", position: "Sport Secretary" },
-  { id: 4, name: "Wisdom Ajabor", position: "Social Secretary" },
-  { id: 5, name: "Ayoade Kaosarat Adenike", position: "Social Secretary" },
-  { id: 6, name: "Fakunle Precious Irene", position: "Social Secretary" },
-  { id: 7, name: "Oraka Samuel Toluwanimi", position: "Public Relations Officer {PRO}" },
-  { id: 8, name: "Babatunde Precious Micheal", position: "Student Representative Councils {Statistics}" },
-  { id: 9, name: "Badmus Quwan Omobolanle", position: "Student Representative Councils {Statistics}" },
-  { id: 10, name: "Oladipo Joseph", position: "Student Representative Councils {Statistics}" },
-  { id: 11, name: "Abdulwahab Abdulqudus Olanrewaju", position: "Student Representative Councils {Statistics}" },
-  { id: 12, name: "Taiwo Oluwasemilore Elizabeth", position: "Student Representative Councils {Chemistry}" },
-  { id: 13, name: "Gaga Precious Rachel", position: "Student Representative Councils {Statistic}" },
-  { id: 14, name: "Sheriff Abdulazeez", position: "Student Representative Councils {Statistic}" },
-  { id: 15, name: "Adeyemi Gideon Oluwatimileyin", position: "Student Representative Councils {Geology}" },
-  { id: 16, name: "Malik Usamot Temitope", position: "Student Representative Councils {Geology}" },
-  { id: 17, name: "Warith Opeyemi Bakare", position: "Student Representative Councils {Industrial Chemistry}" },
-  { id: 18, name: "Adeniyi Daniel", position: "Student Representative Councils {Industrial Chemistry}" },
+  { 
+    id: 1, 
+    name: "Aiyenimelo Samuel Oluwapelumi", 
+    nickname: "Sam",
+    department: "Statistics",
+    level: "300L",
+    position: "General Secretary" 
+  },
+  { 
+    id: 2, 
+    name: "Oke Phillip Olamilekan", 
+    nickname: "Phil",
+    department: "Physics",
+    level: "200L",
+    position: "Sport Secretary" 
+  },
+  { 
+    id: 3, 
+    name: "Abdulazeez Abdulsalam", 
+    nickname: "Abdul",
+    department: "Chemistry",
+    level: "300L",
+    position: "Sport Secretary" 
+  },
+  { 
+    id: 4, 
+    name: "Wisdom Ajabor", 
+    nickname: "Wise",
+    department: "Geology",
+    level: "200L",
+    position: "Social Secretary" 
+  },
+  { 
+    id: 5, 
+    name: "Ayoade Kaosarat Adenike", 
+    nickname: "Kaosar",
+    department: "Industrial Chemistry",
+    level: "300L",
+    position: "Social Secretary" 
+  },
+  { 
+    id: 6, 
+    name: "Fakunle Precious Irene", 
+    nickname: "Precious",
+    department: "Mathematics",
+    level: "400L",
+    position: "Social Secretary" 
+  },
+  { 
+    id: 7, 
+    name: "Oraka Samuel Toluwanimi", 
+    nickname: "Tolu",
+    department: "Computer Science",
+    level: "300L",
+    position: "Public Relations Officer {PRO}" 
+  },
+  { 
+    id: 8, 
+    name: "Babatunde Precious Micheal", 
+    nickname: "Precious",
+    department: "Statistics",
+    level: "200L",
+    position: "Student Representative Councils {Statistics}" 
+  },
+  { 
+    id: 9, 
+    name: "Badmus Quwan Omobolanle", 
+    nickname: "Quwan",
+    department: "Statistics",
+    level: "300L",
+    position: "Student Representative Councils {Statistics}" 
+  },
+  { 
+    id: 10, 
+    name: "Oladipo Joseph", 
+    nickname: "Joe",
+    department: "Statistics",
+    level: "400L",
+    position: "Student Representative Councils {Statistics}" 
+  },
+  { 
+    id: 11, 
+    name: "Abdulwahab Abdulqudus Olanrewaju", 
+    nickname: "Qudus",
+    department: "Statistics",
+    level: "200L",
+    position: "Student Representative Councils {Statistics}" 
+  },
+  { 
+    id: 12, 
+    name: "Taiwo Oluwasemilore Elizabeth", 
+    nickname: "Liz",
+    department: "Chemistry",
+    level: "300L",
+    position: "Student Representative Councils {Chemistry}" 
+  },
+  { 
+    id: 13, 
+    name: "Gaga Precious Rachel", 
+    nickname: "Rachel",
+    department: "Statistics",
+    level: "200L",
+    position: "Student Representative Councils {Statistic}" 
+  },
+  { 
+    id: 14, 
+    name: "Sheriff Abdulazeez", 
+    nickname: "Sheriff",
+    department: "Statistics",
+    level: "400L",
+    position: "Student Representative Councils {Statistic}" 
+  },
+  { 
+    id: 15, 
+    name: "Adeyemi Gideon Oluwatimileyin", 
+    nickname: "Gideon",
+    department: "Geology",
+    level: "300L",
+    position: "Student Representative Councils {Geology}" 
+  },
+  { 
+    id: 16, 
+    name: "Malik Usamot Temitope", 
+    nickname: "Temitope",
+    department: "Geology",
+    level: "200L",
+    position: "Student Representative Councils {Geology}" 
+  },
+  { 
+    id: 17, 
+    name: "Warith Opeyemi Bakare", 
+    nickname: "Warith",
+    department: "Industrial Chemistry",
+    level: "300L",
+    position: "Student Representative Councils {Industrial Chemistry}" 
+  },
+  { 
+    id: 18, 
+    name: "Adeniyi Daniel", 
+    nickname: "Daniel",
+    department: "Industrial Chemistry",
+    level: "400L",
+    position: "Student Representative Councils {Industrial Chemistry}" 
+  },
 ];
 
 export async function seedDatabase() {

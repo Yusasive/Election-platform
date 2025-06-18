@@ -20,6 +20,10 @@ export async function GET() {
         .map(candidate => ({
           id: candidate.id,
           name: candidate.name,
+          nickname: candidate.nickname || '',
+          image: candidate.image || '',
+          department: candidate.department || '',
+          level: candidate.level || '',
           position: candidate.position,
         })),
     }));
@@ -41,7 +45,7 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const { name, position } = await request.json();
+    const { name, nickname, image, department, level, position } = await request.json();
 
     if (!name || !position) {
       return NextResponse.json(
@@ -67,6 +71,10 @@ export async function POST(request: NextRequest) {
     const candidate = new Candidate({
       id: nextId,
       name: sanitizeInput(name),
+      nickname: nickname ? sanitizeInput(nickname) : '',
+      image: image ? sanitizeInput(image) : '',
+      department: department ? sanitizeInput(department) : '',
+      level: level ? sanitizeInput(level) : '',
       position: sanitizeInput(position),
     });
 
@@ -77,6 +85,10 @@ export async function POST(request: NextRequest) {
       candidate: {
         id: candidate.id,
         name: candidate.name,
+        nickname: candidate.nickname,
+        image: candidate.image,
+        department: candidate.department,
+        level: candidate.level,
         position: candidate.position,
       },
     });
@@ -93,7 +105,7 @@ export async function PUT(request: NextRequest) {
   try {
     await connectDB();
 
-    const { id, name } = await request.json();
+    const { id, name, nickname, image, department, level } = await request.json();
 
     if (!id || !name) {
       return NextResponse.json(
@@ -102,9 +114,18 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const updateData: any = {
+      name: sanitizeInput(name),
+    };
+
+    if (nickname !== undefined) updateData.nickname = sanitizeInput(nickname);
+    if (image !== undefined) updateData.image = sanitizeInput(image);
+    if (department !== undefined) updateData.department = sanitizeInput(department);
+    if (level !== undefined) updateData.level = sanitizeInput(level);
+
     const candidate = await Candidate.findOneAndUpdate(
       { id },
-      { name: sanitizeInput(name) },
+      updateData,
       { new: true }
     );
 
@@ -120,6 +141,10 @@ export async function PUT(request: NextRequest) {
       candidate: {
         id: candidate.id,
         name: candidate.name,
+        nickname: candidate.nickname,
+        image: candidate.image,
+        department: candidate.department,
+        level: candidate.level,
         position: candidate.position,
       },
     });

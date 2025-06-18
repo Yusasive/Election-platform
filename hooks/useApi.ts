@@ -59,17 +59,33 @@ export function useApiMutation<T = any>(url: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mutate = async (data?: any, config?: any) => {
+  const mutate = async (config?: any, data?: any, extraConfig?: any) => {
     try {
       setLoading(true);
       setError(null);
       
-      const response = await apiClient({
-        url,
-        method: 'POST',
-        data,
-        ...config,
-      });
+      // Handle different parameter patterns
+      let requestConfig;
+      if (config && config.method) {
+        // New pattern: mutate({ method: 'DELETE' }, data, { url: '/custom' })
+        requestConfig = {
+          url: extraConfig?.url || url,
+          method: config.method || 'POST',
+          data,
+          params: extraConfig?.params,
+          ...config,
+        };
+      } else {
+        // Old pattern: mutate(data, config)
+        requestConfig = {
+          url,
+          method: 'POST',
+          data: config || data,
+          ...extraConfig,
+        };
+      }
+      
+      const response = await apiClient(requestConfig);
       
       return response.data;
     } catch (err: any) {
