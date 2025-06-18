@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useApi, useApiMutation } from "@/hooks/useApi";
 import { formatTime } from "@/lib/utils";
+import toast from 'react-hot-toast';
 
 interface Candidate {
   id: number; 
   name: string;
+  nickname?: string;
+  image?: string;
+  department?: string;
+  level?: string;
 }
 
 interface Position {
@@ -58,15 +63,17 @@ export default function VotingPage() {
   const [voterData, setVoterData] = useState<VoterData | null>(null);
   const [isVotingOpen, setIsVotingOpen] = useState(false);
   const [electionSettings, setElectionSettings] = useState<ElectionSettings | null>(null);
+  const [hasRedirected, setHasRedirected] = useState(false);
+  const [lastToastTime, setLastToastTime] = useState(0);
 
   // Fetch candidates from database
-  const { data: candidatesData, loading: loadingCandidates } = useApi<{
+  const { data: candidatesData, loading: loadingCandidates, error: candidatesError } = useApi<{
     success: boolean;
     positions: Position[];
   }>('/candidates');
 
-  // Fetch current settings
-  const { data: settingsData, refetch: refetchSettings } = useApi<{
+  // Fetch current settings with real-time updates
+  const { data: settingsData, refetch: refetchSettings, error: settingsError } = useApi<{
     success: boolean;
     settings: ElectionSettings;
   }>('/settings');
@@ -91,114 +98,220 @@ export default function VotingPage() {
     return Date.now() + (2 * 60 * 60 * 1000); // Default 2 hours
   }, [electionSettings?.votingEndTime]);
 
+  const votingStartTime = useMemo(() => {
+    if (electionSettings?.votingStartTime) {
+      return new Date(electionSettings.votingStartTime).getTime();
+    }
+    return Date.now() - (1 * 60 * 60 * 1000); // Default started 1 hour ago
+  }, [electionSettings?.votingStartTime]);
+
   const loginTimeLeft = useCountdown(loginEndTime);
   const votingTimeLeft = useCountdown(votingEndTime);
 
+  // Redirect function with toast notification
+  const redirectToHome = useCallback((reason: string) => {
+    if (hasRedirected) return;
+    
+    setHasRedirected(true);
+    toast.error(reason, { duration: 3000 });
+    
+    // Clear all stored data
+    localStorage.removeItem("voterData");
+    localStorage.removeItem("loginTime");
+    localStorage.removeItem("electionSettings");
+    
+    setTimeout(() => {
+      window.location.href = "/";
+    }, 2000);
+  }, [hasRedirected]);
+
+  // Show toast notifications with throttling
+  const showTimingToast = useCallback((message: string, type: 'warning' | 'info' = 'warning') => {
+    const now = Date.now();
+    if (now - lastToastTime > 30000) { // Only show every 30 seconds
+      if (type === 'warning') {
+        toast.warning(message, { duration: 5000 });
+      } else {
+        toast.info(message, { duration: 4000 });
+      }
+      setLastToastTime(now);
+    }
+  }, [lastToastTime]);
+
+  // Initial setup and validation
   useEffect(() => {
-    // Load voter data
     const storedVoterData = localStorage.getItem("voterData");
     const storedSettings = localStorage.getItem("electionSettings");
     const hasVoted = localStorage.getItem("voteRecord");
+    const loginTime = localStorage.getItem("loginTime");
 
+    // Validation checks
     if (!storedVoterData) {
-      alert("You must log in first!");
-      window.location.href = "/";
+      redirectToHome("You must log in first!");
       return;
     }
 
     if (hasVoted) {
-      alert("You have already voted!");
-      window.location.href = "/";
+      redirectToHome("You have already voted!");
       return;
     }
 
-    const parsedVoterData = JSON.parse(storedVoterData) as VoterData;
-    setVoterData(parsedVoterData);
-
-    if (storedSettings) {
-      setElectionSettings(JSON.parse(storedSettings));
+    if (!loginTime) {
+      redirectToHome("Invalid login session!");
+      return;
     }
 
-    // Set login time if not already set
-    if (!localStorage.getItem("loginTime")) {
-      localStorage.setItem("loginTime", Date.now().toString());
+    try {
+      const parsedVoterData = JSON.parse(storedVoterData) as VoterData;
+      setVoterData(parsedVoterData);
+
+      if (storedSettings) {
+        const parsedSettings = JSON.parse(storedSettings);
+        setElectionSettings(parsedSettings);
+      }
+
+      toast.success(`Welcome ${parsedVoterData.fullName}! You can now vote.`, { duration: 3000 });
+    } catch (error) {
+      console.error("Error parsing stored data:", error);
+      redirectToHome("Invalid session data!");
     }
+  }, [redirectToHome]);
 
-    // Refetch settings every 10 seconds for real-time updates
-    const settingsInterval = setInterval(() => {
-      refetchSettings();
-    }, 10000);
+  // Real-time settings updates
+  useEffect(() => {
+    if (!hasRedirected) {
+      // Refetch settings every 5 seconds for real-time updates
+      const settingsInterval = setInterval(() => {
+        refetchSettings();
+      }, 5000);
 
-    return () => clearInterval(settingsInterval);
-  }, [refetchSettings]);
+      return () => clearInterval(settingsInterval);
+    }
+  }, [refetchSettings, hasRedirected]);
 
   // Update settings when new data arrives
   useEffect(() => {
-    if (settingsData?.settings) {
+    if (settingsData?.settings && !hasRedirected) {
       setElectionSettings(settingsData.settings);
       localStorage.setItem("electionSettings", JSON.stringify(settingsData.settings));
     }
-  }, [settingsData]);
+  }, [settingsData, hasRedirected]);
 
-  // Check voting status
+  // Real-time voting status monitoring
   useEffect(() => {
-    if (!electionSettings) return;
+    if (!electionSettings || hasRedirected) return;
 
-    const interval = setInterval(() => {
+    const checkVotingStatus = () => {
       const now = Date.now();
       const votingStart = new Date(electionSettings.votingStartTime).getTime();
       const votingEnd = new Date(electionSettings.votingEndTime).getTime();
       
       const adminActive = electionSettings.isVotingActive;
-      const withinTimeLimit = now >= votingStart && now <= votingEnd;
+      const withinTimeWindow = now >= votingStart && now <= votingEnd;
       const loginValid = now <= loginEndTime;
       
-      setIsVotingOpen(adminActive && withinTimeLimit && loginValid);
-    }, 1000);
+      const newVotingStatus = adminActive && withinTimeWindow && loginValid;
+      
+      // Check for session expiry
+      if (!loginValid) {
+        redirectToHome("Your login session has expired!");
+        return;
+      }
+      
+      // Check for voting period end
+      if (now > votingEnd) {
+        redirectToHome("Voting period has ended!");
+        return;
+      }
+      
+      // Check for admin disable
+      if (!adminActive) {
+        redirectToHome("Voting has been disabled by admin!");
+        return;
+      }
+      
+      // Check for voting not started
+      if (now < votingStart) {
+        redirectToHome("Voting has not started yet!");
+        return;
+      }
+
+      setIsVotingOpen(newVotingStatus);
+
+      // Show timing warnings
+      if (loginTimeLeft <= 5 * 60 * 1000 && loginTimeLeft > 0) { // 5 minutes left
+        showTimingToast(`⚠️ Login session expires in ${formatTime(loginTimeLeft)}!`, 'warning');
+      }
+      
+      if (votingTimeLeft <= 10 * 60 * 1000 && votingTimeLeft > 0) { // 10 minutes left
+        showTimingToast(`⏰ Voting ends in ${formatTime(votingTimeLeft)}!`, 'warning');
+      }
+    };
+
+    // Check immediately
+    checkVotingStatus();
+
+    // Then check every second
+    const interval = setInterval(checkVotingStatus, 1000);
 
     return () => clearInterval(interval);
-  }, [electionSettings, loginEndTime]);
+  }, [electionSettings, loginEndTime, loginTimeLeft, votingTimeLeft, hasRedirected, redirectToHome, showTimingToast]);
 
+  // Handle candidate selection
   const handleSelection = (
     position: string,
     candidateId: string,
     allowMultiple: boolean
   ) => {
+    if (!isVotingOpen) {
+      toast.error("Voting is currently closed!");
+      return;
+    }
+
     if (allowMultiple) {
       const currentSelections = selections[position] || [];
-      const updatedSelections = (currentSelections as string[]).includes(
-        candidateId
-      )
+      const updatedSelections = (currentSelections as string[]).includes(candidateId)
         ? (currentSelections as string[]).filter((id) => id !== candidateId)
         : [...(currentSelections as string[]), candidateId];
+      
       setSelections({ ...selections, [position]: updatedSelections });
+      
+      if (updatedSelections.includes(candidateId)) {
+        toast.success(`Selected candidate for ${position}`, { duration: 2000 });
+      } else {
+        toast.info(`Deselected candidate for ${position}`, { duration: 2000 });
+      }
     } else {
       setSelections({ ...selections, [position]: candidateId });
+      toast.success(`Selected candidate for ${position}`, { duration: 2000 });
     }
   };
 
+  // Handle vote submission
   const handleVote = async () => {
     if (!isVotingOpen) {
-      alert("Voting is closed.");
+      toast.error("Voting is currently closed!");
       return;
     }
 
     if (!candidatesData?.positions) {
-      alert("Candidates data not loaded. Please refresh the page.");
+      toast.error("Candidates data not loaded. Please refresh the page.");
       return;
     }
 
-    const allPositions = candidatesData.positions.map(
-      (position: Position) => position.position
-    );
-    const missingVotes = allPositions.filter(
-      (pos) => !selections[pos] || (Array.isArray(selections[pos]) && (selections[pos] as string[]).length === 0)
-    );
+    // Validate all positions have votes
+    const allPositions = candidatesData.positions.map((position: Position) => position.position);
+    const missingVotes = allPositions.filter((pos) => {
+      const selection = selections[pos];
+      return !selection || (Array.isArray(selection) && selection.length === 0);
+    });
 
     if (missingVotes.length > 0) {
-      alert(`You must vote for all positions: ${missingVotes.join(", ")}`);
+      toast.error(`Please vote for all positions: ${missingVotes.join(", ")}`, { duration: 5000 });
       return;
     }
+
+    const loadingToast = toast.loading("Submitting your vote...");
 
     try {
       await submitVote({
@@ -206,23 +319,48 @@ export default function VotingPage() {
         votes: selections,
       });
 
+      // Mark as voted and clear session data
       localStorage.setItem("voteRecord", JSON.stringify(selections));
       localStorage.removeItem("loginTime");
       localStorage.removeItem("voterData");
       localStorage.removeItem("electionSettings");
       
-      alert("Thank you for voting!");
-      window.location.href = "/congratulations";
+      toast.success("Vote submitted successfully! Redirecting...", { id: loadingToast });
+      
+      setTimeout(() => {
+        window.location.href = "/congratulations";
+      }, 2000);
     } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to submit vote. Please try again.");
+      console.error("Vote submission error:", error);
+      const errorMessage = error.response?.data?.error || "Failed to submit vote. Please try again.";
+      toast.error(errorMessage, { id: loadingToast });
     }
   };
 
-  if (loadingCandidates) {
+  // Handle errors
+  useEffect(() => {
+    if (candidatesError) {
+      toast.error("Failed to load candidates. Please refresh the page.");
+    }
+    if (settingsError) {
+      toast.error("Failed to load election settings. Please refresh the page.");
+    }
+  }, [candidatesError, settingsError]);
+
+  // Loading state
+  if (loadingCandidates || !voterData || !electionSettings) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500"></div>
-      </div>
+      <main className="flex justify-center items-center h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center bg-white rounded-2xl shadow-lg p-8"
+        >
+          <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 font-medium">Loading voting interface...</p>
+          <p className="text-sm text-gray-500 mt-2">Please wait while we prepare your ballot</p>
+        </motion.div>
+      </main>
     );
   }
 
@@ -242,13 +380,14 @@ export default function VotingPage() {
         </p>
       </motion.header>
 
+      {/* Real-time Status Panel */}
       <motion.section
         className="max-w-4xl mx-auto mb-8 bg-white shadow-lg rounded-2xl p-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.3, duration: 0.8 }}
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="flex items-center space-x-3">
             <div className="p-3 bg-blue-100 rounded-full">
               <svg
@@ -268,7 +407,9 @@ export default function VotingPage() {
             </div>
             <div>
               <p className="text-gray-700 font-medium">Login Session</p>
-              <p className="text-blue-600 font-bold text-lg">
+              <p className={`font-bold text-lg ${
+                loginTimeLeft <= 5 * 60 * 1000 ? 'text-red-600' : 'text-blue-600'
+              }`}>
                 {formatTime(loginTimeLeft)}
               </p>
             </div>
@@ -293,8 +434,28 @@ export default function VotingPage() {
             </div>
             <div>
               <p className="text-gray-700 font-medium">Voting Ends</p>
-              <p className="text-green-600 font-bold text-lg">
+              <p className={`font-bold text-lg ${
+                votingTimeLeft <= 10 * 60 * 1000 ? 'text-red-600' : 'text-green-600'
+              }`}>
                 {formatTime(votingTimeLeft)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <div className={`p-3 rounded-full ${
+              isVotingOpen ? 'bg-green-100' : 'bg-red-100'
+            }`}>
+              <div className={`w-3 h-3 rounded-full ${
+                isVotingOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+              }`}></div>
+            </div>
+            <div>
+              <p className="text-gray-700 font-medium">Status</p>
+              <p className={`font-bold text-lg ${
+                isVotingOpen ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {isVotingOpen ? 'Active' : 'Closed'}
               </p>
             </div>
           </div>
@@ -305,10 +466,14 @@ export default function VotingPage() {
             <p className="text-center text-red-700 font-semibold">
               🚫 Voting is currently closed!
             </p>
+            <p className="text-center text-red-600 text-sm mt-1">
+              You will be redirected to the home page shortly.
+            </p>
           </div>
         )}
       </motion.section>
 
+      {/* Voter Information */}
       {voterData && (
         <motion.div
           className="max-w-4xl mx-auto mb-8 bg-white shadow-lg rounded-2xl p-6"
@@ -332,6 +497,7 @@ export default function VotingPage() {
         </motion.div>
       )}
 
+      {/* Voting Positions */}
       <motion.section
         className="max-w-4xl mx-auto space-y-8"
         initial={{ opacity: 0 }}
@@ -407,9 +573,26 @@ export default function VotingPage() {
                         <h3 className="font-semibold text-gray-800">
                           {candidate.name}
                         </h3>
-                        <p className="text-sm text-gray-600">
-                          Candidate ID: {candidate.id}
-                        </p>
+                        {candidate.nickname && (
+                          <p className="text-sm text-blue-600 italic">
+                            "{candidate.nickname}"
+                          </p>
+                        )}
+                        <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
+                          <span>ID: {candidate.id}</span>
+                          {candidate.department && (
+                            <>
+                              <span>•</span>
+                              <span>{candidate.department}</span>
+                            </>
+                          )}
+                          {candidate.level && (
+                            <>
+                              <span>•</span>
+                              <span>{candidate.level}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -420,6 +603,7 @@ export default function VotingPage() {
         ))}
       </motion.section>
 
+      {/* Submit Vote Button */}
       <motion.div
         className="max-w-4xl mx-auto text-center mt-12"
         initial={{ opacity: 0 }}
@@ -446,6 +630,31 @@ export default function VotingPage() {
             "Voting Closed"
           )}
         </button>
+
+        {/* Quick Actions */}
+        <div className="mt-6 flex justify-center space-x-4 text-sm text-gray-500">
+          <button
+            onClick={() => {
+              refetchSettings();
+              toast.success("Status refreshed!");
+            }}
+            className="hover:text-blue-500 transition duration-200"
+          >
+            Refresh Status
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => {
+              const selectionCount = Object.values(selections).filter(s => 
+                Array.isArray(s) ? s.length > 0 : s
+              ).length;
+              toast.info(`You have voted for ${selectionCount} positions`, { duration: 3000 });
+            }}
+            className="hover:text-blue-500 transition duration-200"
+          >
+            Check Progress
+          </button>
+        </div>
       </motion.div>
     </main>
   );
