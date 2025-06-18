@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useApi, useApiMutation } from "@/hooks/useApi";
 import { formatTime } from "@/lib/utils";
+import toast from 'react-hot-toast';
 
 interface FormData {
   matricNumber: string;
@@ -93,24 +94,80 @@ export default function HomePage() {
     setFormData({ ...formData, [name]: value });
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        toast.error("Please select a valid image file");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const imageUrl = event.target?.result as string;
+        setFormData({ ...formData, image: imageUrl });
+        toast.success("Image uploaded successfully!");
+      };
+      reader.onerror = () => {
+        toast.error("Failed to upload image. Please try again.");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const validateForm = (): boolean => {
+    if (!formData.matricNumber.trim()) {
+      toast.error("Please enter your matric number");
+      return false;
+    }
+
+    if (!formData.fullName.trim()) {
+      toast.error("Please enter your full name");
+      return false;
+    }
+
+    if (!formData.department.trim()) {
+      toast.error("Please enter your department");
+      return false;
+    }
+
+    // Validate matric number format (basic validation)
+    const matricRegex = /^[a-zA-Z0-9]{6,15}$/;
+    if (!matricRegex.test(formData.matricNumber)) {
+      toast.error("Please enter a valid matric number (6-15 characters, letters and numbers only)");
+      return false;
+    }
+
+    return true;
+  };
+
   const handleLogin = async () => {
+    // Check voting period first
     if (!isVotingPeriod) {
-      alert("You can only log in during the voting period.");
+      toast.error("You can only log in during the voting period");
       return;
     }
 
-    // Validate input fields
-    if (!formData.matricNumber || !formData.fullName || !formData.department) {
-      alert("All fields are required.");
+    // Validate form
+    if (!validateForm()) {
       return;
     }
 
     // Check if user has already voted
     const existingVote = localStorage.getItem("voteRecord");
     if (existingVote) {
-      alert("You have already voted. Login is restricted.");
+      toast.error("You have already voted. Login is restricted.");
       return;
     }
+
+    const loadingToast = toast.loading("Registering and logging you in...");
 
     try {
       const result = await registerUser(formData);
@@ -121,13 +178,33 @@ export default function HomePage() {
         localStorage.setItem("loginTime", Date.now().toString());
         localStorage.setItem("electionSettings", JSON.stringify(settingsData.settings));
         
-        // Redirect to voting page
-        window.location.href = "/vote";
+        toast.success("Login successful! Redirecting to voting page...", { id: loadingToast });
+        
+        // Small delay to show success message before redirect
+        setTimeout(() => {
+          window.location.href = "/vote";
+        }, 1000);
       }
     } catch (error: any) {
-      alert(error.response?.data?.error || "Registration failed. Please try again.");
+      console.error("Registration error:", error);
+      const errorMessage = error.response?.data?.error || "Registration failed. Please try again.";
+      toast.error(errorMessage, { id: loadingToast });
     }
   };
+
+  // Show loading state while fetching settings
+  if (settingsLoading) {
+    return (
+      <main className="flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 min-h-screen">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading election status...</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 min-h-screen">
@@ -143,22 +220,16 @@ export default function HomePage() {
               width={80} 
               height={60}
               className="rounded-lg shadow-sm"
+              onError={() => {
+                toast.error("Failed to load faculty logo");
+              }}
             />
           </div>
           <p className="text-gray-600 font-medium">Election Voting Portal</p>
         </div>
 
         <div className="mb-6">
-          {settingsLoading ? (
-            <div className="text-center">
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="w-3 h-3 bg-gray-400 rounded-full animate-pulse"></div>
-                  <span className="text-gray-600 font-semibold">Loading voting status...</span>
-                </div>
-              </div>
-            </div>
-          ) : isVotingPeriod ? (
+          {isVotingPeriod ? (
             <div className="text-center">
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center justify-center space-x-2">
@@ -196,11 +267,12 @@ export default function HomePage() {
             <input
               type="text"
               name="matricNumber"
-              placeholder="Matric Number"
+              placeholder="Matric Number (e.g., 20/0001)"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.matricNumber}
               disabled={registering}
+              maxLength={15}
             />
           </div>
           
@@ -213,6 +285,7 @@ export default function HomePage() {
               onChange={handleInputChange}
               value={formData.fullName}
               disabled={registering}
+              maxLength={100}
             />
           </div>
           
@@ -220,11 +293,12 @@ export default function HomePage() {
             <input
               type="text"
               name="department"
-              placeholder="Department"
+              placeholder="Department (e.g., Computer Science)"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
               onChange={handleInputChange}
               value={formData.department}
               disabled={registering}
+              maxLength={100}
             />
           </div>
 
@@ -257,13 +331,21 @@ export default function HomePage() {
                     className="mx-auto mb-2 h-24 w-24 object-cover rounded-lg"
                   />
                   <span className="text-green-600 text-sm font-medium">
-                    Image uploaded successfully
+                    ✓ Image uploaded successfully
                   </span>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Click to change image
+                  </p>
                 </div>
               ) : (
-                <span className="text-gray-600 font-medium">
-                  Upload ID Card or Course Form
-                </span>
+                <div className="text-center">
+                  <span className="text-gray-600 font-medium">
+                    Upload ID Card or Course Form
+                  </span>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Optional - Max 5MB, JPG/PNG
+                  </p>
+                </div>
               )}
             </label>
             <input
@@ -272,15 +354,7 @@ export default function HomePage() {
               name="image"
               accept="image/*"
               className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setFormData({
-                    ...formData,
-                    image: URL.createObjectURL(file),
-                  });
-                }
-              }}
+              onChange={handleImageUpload}
               disabled={registering}
             />
           </div>
@@ -294,17 +368,84 @@ export default function HomePage() {
             }`}
             disabled={!isVotingPeriod || registering}
           >
-            {registering ? "Registering..." : isVotingPeriod ? "Login & Vote" : "Voting Closed"}
+            {registering ? (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span>Registering...</span>
+              </div>
+            ) : isVotingPeriod ? (
+              "Login & Vote"
+            ) : (
+              "Voting Closed"
+            )}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-6 text-center space-y-2">
           <a
             href="/admin"
-            className="text-blue-500 hover:text-blue-600 text-sm font-medium transition duration-200"
+            className="block text-blue-500 hover:text-blue-600 text-sm font-medium transition duration-200"
+            onClick={() => {
+              toast.loading("Redirecting to admin dashboard...");
+            }}
           >
             Admin Dashboard
           </a>
+          
+          {/* Quick Actions */}
+          <div className="flex justify-center space-x-4 text-xs text-gray-500">
+            <button
+              onClick={() => {
+                if (settingsData?.settings) {
+                  toast.success("Settings refreshed!");
+                  refetchSettings();
+                } else {
+                  toast.error("No settings available");
+                }
+              }}
+              className="hover:text-blue-500 transition duration-200"
+            >
+              Refresh Status
+            </button>
+            <span>•</span>
+            <button
+              onClick={() => {
+                const info = `
+Current Time: ${currentTime.toLocaleString()}
+Voting Status: ${isVotingPeriod ? 'Active' : 'Closed'}
+Time Remaining: ${timeRemaining}
+                `.trim();
+                
+                navigator.clipboard.writeText(info).then(() => {
+                  toast.success("Election info copied to clipboard!");
+                }).catch(() => {
+                  toast.error("Failed to copy info");
+                });
+              }}
+              className="hover:text-blue-500 transition duration-200"
+            >
+              Copy Info
+            </button>
+          </div>
+        </div>
+
+        {/* Help Section */}
+        <div className="mt-6 bg-gray-50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-2">Need Help?</h3>
+          <div className="text-xs text-gray-600 space-y-1">
+            <p>• Ensure your matric number is correct</p>
+            <p>• Use your full legal name as registered</p>
+            <p>• Department should match your faculty records</p>
+            <p>• Image upload is optional but recommended</p>
+          </div>
+          <button
+            onClick={() => {
+              toast.success("Help information displayed above ↑");
+            }}
+            className="mt-2 text-xs text-blue-500 hover:text-blue-600 transition duration-200"
+          >
+            Show validation tips
+          </button>
         </div>
       </div>
     </main>
