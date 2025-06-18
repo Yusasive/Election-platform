@@ -22,14 +22,23 @@ export default function AdminDashboard() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   const { mutate: loginAdmin, loading: loggingIn } = useApiMutation('/auth/admin');
 
   useEffect(() => {
-    const adminToken = localStorage.getItem("adminToken");
-    if (adminToken) {
-      setIsAuthenticated(true);
-    }
+    // Check authentication status
+    const checkAuth = () => {
+      const adminToken = localStorage.getItem("adminToken");
+      const adminAuth = localStorage.getItem("adminAuth");
+      
+      if (adminToken && adminAuth === "true") {
+        setIsAuthenticated(true);
+      }
+      setIsLoading(false);
+    };
+
+    checkAuth();
   }, []);
 
   const handleLogin = async () => {
@@ -46,8 +55,10 @@ export default function AdminDashboard() {
         localStorage.setItem("adminToken", result.token);
         localStorage.setItem("adminAuth", "true");
         setIsAuthenticated(true);
+        setLoginData({ username: "", password: "" });
       }
     } catch (error: any) {
+      console.error("Login error:", error);
       setLoginError(error.response?.data?.error || "Login failed. Please try again.");
     }
   };
@@ -68,10 +79,19 @@ export default function AdminDashboard() {
     { id: "students", label: "Student Votes", icon: "🗳️", color: "orange" },
   ];
 
+  // Show loading spinner while checking authentication
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-white"></div>
+      </main>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center p-6">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%239C92AC" fill-opacity="0.1"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-20"></div>
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%239C92AC\" fill-opacity=\"0.1\"%3E%3Ccircle cx=\"30\" cy=\"30\" r=\"2\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-20"></div>
         
         <motion.div
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -134,6 +154,7 @@ export default function AdminDashboard() {
                 }
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 bg-gray-50 focus:bg-white"
                 disabled={loggingIn}
+                autoComplete="username"
               />
             </div>
 
@@ -153,13 +174,15 @@ export default function AdminDashboard() {
                 }
                 className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 bg-gray-50 focus:bg-white"
                 disabled={loggingIn}
+                autoComplete="current-password"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                disabled={loggingIn}
               >
-                <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 text-gray-400 hover:text-gray-600 transition duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   {showPassword ? (
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
                   ) : (
@@ -215,6 +238,28 @@ export default function AdminDashboard() {
               </div>
             </div>
           </motion.div>
+
+          {/* Setup Link */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+            className="mt-6 text-center"
+          >
+            <a
+              href="/setup"
+              className="text-blue-500 hover:text-blue-600 text-sm font-medium transition duration-200"
+            >
+              Database Setup
+            </a>
+            <span className="mx-2 text-gray-400">•</span>
+            <a
+              href="/"
+              className="text-blue-500 hover:text-blue-600 text-sm font-medium transition duration-200"
+            >
+              Back to Home
+            </a>
+          </motion.div>
         </motion.div>
       </main>
     );
@@ -226,12 +271,12 @@ export default function AdminDashboard() {
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white shadow-sm border-b"
+        className="bg-white shadow-sm border-b sticky top-0 z-50"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md">
                 <span className="text-white text-xl">🏛️</span>
               </div>
               <div>
@@ -241,35 +286,42 @@ export default function AdminDashboard() {
                 <p className="text-sm text-gray-500">Faculty of Physical Sciences</p>
               </div>
             </div>
-            <button
-              onClick={handleLogout}
-              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition duration-200 flex items-center space-x-2"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span>Logout</span>
-            </button>
+            <div className="flex items-center space-x-4">
+              <div className="hidden sm:block">
+                <span className="text-sm text-gray-600">
+                  Welcome, <span className="font-medium">Administrator</span>
+                </span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition duration-200 flex items-center space-x-2 shadow-md"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span>Logout</span>
+              </button>
+            </div>
           </div>
         </div>
       </motion.header>
 
       {/* Navigation Tabs */}
-      <nav className="bg-white shadow-sm border-b">
+      <nav className="bg-white shadow-sm border-b sticky top-16 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex space-x-8 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 whitespace-nowrap ${
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition duration-200 whitespace-nowrap flex items-center space-x-2 ${
                   activeTab === tab.id
                     ? `border-${tab.color}-500 text-${tab.color}-600`
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
-                {tab.label}
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
               </button>
             ))}
           </div>
