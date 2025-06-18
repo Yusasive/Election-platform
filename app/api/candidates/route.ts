@@ -20,6 +20,7 @@ export async function GET() {
         .map(candidate => ({
           id: candidate.id,
           name: candidate.name,
+          position: candidate.position,
         })),
     }));
 

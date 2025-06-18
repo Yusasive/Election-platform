@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Vote from '@/models/Vote';
 import User from '@/models/User';
@@ -48,9 +48,11 @@ export async function GET() {
       analytics.hourlyVotes[hourKey] = (analytics.hourlyVotes[hourKey] || 0) + 1;
     });
 
-    // Process department statistics
-    const users = await User.find({});
-    users.forEach((user) => {
+    // Process department statistics from users who voted
+    const votedUserIds = votes.map(vote => vote.userId);
+    const votedUsers = await User.find({ _id: { $in: votedUserIds } });
+    
+    votedUsers.forEach((user) => {
       if (user.department) {
         analytics.departmentStats[user.department] = 
           (analytics.departmentStats[user.department] || 0) + 1;
