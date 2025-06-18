@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
+import { useApi, useApiMutation } from "@/hooks/useApi";
+import { formatTime } from "@/lib/utils";
 
 interface Candidate {
   id: number; 
@@ -15,8 +17,18 @@ interface Position {
 }
 
 interface VoterData {
+  id: string;
   matricNumber: string;
   fullName: string;
+  department: string;
+  hasVoted: boolean;
+}
+
+interface ElectionSettings {
+  votingStartTime: string;
+  votingEndTime: string;
+  isVotingActive: boolean;
+  loginDuration: number;
 }
 
 interface Selections {
@@ -45,75 +57,50 @@ export default function VotingPage() {
   const [selections, setSelections] = useState<Selections>({});
   const [voterData, setVoterData] = useState<VoterData | null>(null);
   const [isVotingOpen, setIsVotingOpen] = useState(false);
-  const [candidates, setCandidates] = useState<Position[]>([]);
-  const [votingTimes, setVotingTimes] = useState({
-    votingEndTime: "",
-    loginDuration: 35,
-    isVotingActive: false,
-  });
+  const [electionSettings, setElectionSettings] = useState<ElectionSettings | null>(null);
+
+  // Fetch candidates from database
+  const { data: candidatesData, loading: loadingCandidates } = useApi<{
+    success: boolean;
+    positions: Position[];
+  }>('/candidates');
+
+  // Fetch current settings
+  const { data: settingsData, refetch: refetchSettings } = useApi<{
+    success: boolean;
+    settings: ElectionSettings;
+  }>('/settings');
+
+  // Submit vote mutation
+  const { mutate: submitVote, loading: submittingVote } = useApiMutation('/votes');
 
   // Calculate login and voting end times
   const loginEndTime = useMemo(() => {
     const loginTime = localStorage.getItem("loginTime");
+    const duration = electionSettings?.loginDuration || 35;
     if (loginTime) {
-      return parseInt(loginTime) + (votingTimes.loginDuration * 60 * 1000);
+      return parseInt(loginTime) + (duration * 60 * 1000);
     }
-    return Date.now() + (votingTimes.loginDuration * 60 * 1000);
-  }, [votingTimes.loginDuration]);
+    return Date.now() + (duration * 60 * 1000);
+  }, [electionSettings?.loginDuration]);
 
   const votingEndTime = useMemo(() => {
-    if (votingTimes.votingEndTime) {
-      return new Date(votingTimes.votingEndTime).getTime();
+    if (electionSettings?.votingEndTime) {
+      return new Date(electionSettings.votingEndTime).getTime();
     }
     return Date.now() + (2 * 60 * 60 * 1000); // Default 2 hours
-  }, [votingTimes.votingEndTime]);
+  }, [electionSettings?.votingEndTime]);
 
   const loginTimeLeft = useCountdown(loginEndTime);
   const votingTimeLeft = useCountdown(votingEndTime);
 
-  const formatTime = (ms: number): string => {
-    if (ms <= 0) return "Time Expired";
-
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    return `${hours.toString().padStart(2, "0")}:${minutes
-      .toString()
-      .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-  };
-
   useEffect(() => {
-    // Load admin settings
-    const savedSettings = localStorage.getItem("timeSettings");
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      setVotingTimes({
-        votingEndTime: settings.votingEndTime || "",
-        loginDuration: settings.loginDuration || 35,
-        isVotingActive: settings.isVotingActive || false,
-      });
-    }
-
-    // Load candidates (check localStorage first, then fallback to JSON)
-    const savedCandidates = localStorage.getItem("candidates");
-    if (savedCandidates) {
-      setCandidates(JSON.parse(savedCandidates));
-    } else {
-      // Load from JSON file
-      fetch("/data/candidates.json")
-        .then(response => response.json())
-        .then(data => setCandidates(data))
-        .catch(error => console.error("Error loading candidates:", error));
-    }
-
-    const storedVoterData = JSON.parse(
-      localStorage.getItem("voterData") || "{}"
-    ) as VoterData;
+    // Load voter data
+    const storedVoterData = localStorage.getItem("voterData");
+    const storedSettings = localStorage.getItem("electionSettings");
     const hasVoted = localStorage.getItem("voteRecord");
 
-    if (!storedVoterData?.matricNumber) {
+    if (!storedVoterData) {
       alert("You must log in first!");
       window.location.href = "/";
       return;
@@ -125,24 +112,52 @@ export default function VotingPage() {
       return;
     }
 
+    const parsedVoterData = JSON.parse(storedVoterData) as VoterData;
+    setVoterData(parsedVoterData);
+
+    if (storedSettings) {
+      setElectionSettings(JSON.parse(storedSettings));
+    }
+
     // Set login time if not already set
     if (!localStorage.getItem("loginTime")) {
       localStorage.setItem("loginTime", Date.now().toString());
     }
 
-    setVoterData(storedVoterData);
+    // Refetch settings every 10 seconds for real-time updates
+    const settingsInterval = setInterval(() => {
+      refetchSettings();
+    }, 10000);
+
+    return () => clearInterval(settingsInterval);
+  }, [refetchSettings]);
+
+  // Update settings when new data arrives
+  useEffect(() => {
+    if (settingsData?.settings) {
+      setElectionSettings(settingsData.settings);
+      localStorage.setItem("electionSettings", JSON.stringify(settingsData.settings));
+    }
+  }, [settingsData]);
+
+  // Check voting status
+  useEffect(() => {
+    if (!electionSettings) return;
 
     const interval = setInterval(() => {
       const now = Date.now();
-      const adminActive = JSON.parse(localStorage.getItem("timeSettings") || "{}")?.isVotingActive;
-      const withinTimeLimit = now <= votingEndTime;
+      const votingStart = new Date(electionSettings.votingStartTime).getTime();
+      const votingEnd = new Date(electionSettings.votingEndTime).getTime();
+      
+      const adminActive = electionSettings.isVotingActive;
+      const withinTimeLimit = now >= votingStart && now <= votingEnd;
       const loginValid = now <= loginEndTime;
       
       setIsVotingOpen(adminActive && withinTimeLimit && loginValid);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [votingEndTime, loginEndTime]);
+  }, [electionSettings, loginEndTime]);
 
   const handleSelection = (
     position: string,
@@ -168,11 +183,16 @@ export default function VotingPage() {
       return;
     }
 
-    const allPositions = candidates.map(
+    if (!candidatesData?.positions) {
+      alert("Candidates data not loaded. Please refresh the page.");
+      return;
+    }
+
+    const allPositions = candidatesData.positions.map(
       (position: Position) => position.position
     );
     const missingVotes = allPositions.filter(
-      (pos) => !selections[pos] || (selections[pos] as string[]).length === 0
+      (pos) => !selections[pos] || (Array.isArray(selections[pos]) && (selections[pos] as string[]).length === 0)
     );
 
     if (missingVotes.length > 0) {
@@ -181,35 +201,30 @@ export default function VotingPage() {
     }
 
     try {
-      const response = await fetch(
-        "https://65130c258e505cebc2e981a1.mockapi.io/votes",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            matricNumber: voterData?.matricNumber,
-            votes: selections,
-            timestamp: new Date().toISOString(),
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to submit your vote. Please try again later.");
-      }
+      await submitVote({
+        matricNumber: voterData?.matricNumber,
+        votes: selections,
+      });
 
       localStorage.setItem("voteRecord", JSON.stringify(selections));
       localStorage.removeItem("loginTime");
+      localStorage.removeItem("voterData");
+      localStorage.removeItem("electionSettings");
+      
       alert("Thank you for voting!");
       window.location.href = "/congratulations";
-    } catch (error) {
-      if (error instanceof Error) {
-        alert(error.message);
-      } else {
-        alert("An unknown error occurred.");
-      }
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to submit vote. Please try again.");
     }
   };
+
+  if (loadingCandidates) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <main className="p-6 bg-gradient-to-br from-blue-50 via-white to-indigo-50 min-h-screen">
@@ -310,7 +325,7 @@ export default function VotingPage() {
                 Welcome, {voterData.fullName}
               </h3>
               <p className="text-gray-600">
-                Matric: {voterData.matricNumber}
+                Matric: {voterData.matricNumber} • {voterData.department}
               </p>
             </div>
           </div>
@@ -323,7 +338,7 @@ export default function VotingPage() {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.8, duration: 0.8 }}
       >
-        {candidates.map((position: Position, index) => (
+        {candidatesData?.positions?.map((position: Position, index) => (
           <motion.div
             key={position.position}
             className="bg-white shadow-lg rounded-2xl p-6 border border-gray-100 hover:shadow-xl transition duration-300"
@@ -413,14 +428,23 @@ export default function VotingPage() {
       >
         <button
           onClick={handleVote}
+          disabled={!isVotingOpen || submittingVote}
           className={`px-12 py-4 rounded-xl font-bold text-lg transition duration-300 transform hover:scale-105 ${
-            isVotingOpen
+            isVotingOpen && !submittingVote
               ? "bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl"
               : "bg-gray-300 text-gray-500 cursor-not-allowed"
           }`}
-          disabled={!isVotingOpen}
         >
-          {isVotingOpen ? "🗳️ Cast Your Vote" : "Voting Closed"}
+          {submittingVote ? (
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <span>Submitting Vote...</span>
+            </div>
+          ) : isVotingOpen ? (
+            "🗳️ Cast Your Vote"
+          ) : (
+            "Voting Closed"
+          )}
         </button>
       </motion.div>
     </main>

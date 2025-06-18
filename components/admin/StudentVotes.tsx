@@ -2,72 +2,49 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useApi } from "@/hooks/useApi";
 
 interface StudentVote {
-  id: string;
+  _id: string;
   matricNumber: string;
-  votes: { [position: string]: string | string[] };
-  timestamp: string;
-}
-
-interface StudentData {
-  matricNumber: string;
-  fullName: string;
-  department: string;
-}
-
-interface CombinedStudentData extends StudentVote {
-  fullName?: string;
-  department?: string;
+  userId: {
+    fullName: string;
+    department: string;
+  };
+  votes: {
+    position: string;
+    candidateIds: string[];
+  }[];
+  createdAt: string;
 }
 
 export default function StudentVotes() {
-  const [studentVotes, setStudentVotes] = useState<CombinedStudentData[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPosition, setSelectedPosition] = useState("");
   const [selectedCandidate, setSelectedCandidate] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "department" | "time">("time");
 
+  // Fetch votes from database
+  const { data: votesData, loading, refetch } = useApi<{
+    success: boolean;
+    votes: StudentVote[];
+  }>('/votes');
+
+  const studentVotes = votesData?.votes || [];
+
   useEffect(() => {
-    fetchStudentVotes();
-  }, []);
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(() => {
+      refetch();
+    }, 30000);
 
-  const fetchStudentVotes = async () => {
-    setLoading(true);
-    try {
-      // Fetch votes
-      const votesResponse = await fetch("https://65130c258e505cebc2e981a1.mockapi.io/votes");
-      const votes: StudentVote[] = await votesResponse.json();
-
-      // Fetch student data
-      const studentsResponse = await fetch("https://65130c258e505cebc2e981a1.mockapi.io/login");
-      const students: StudentData[] = await studentsResponse.json();
-
-      // Combine data
-      const combinedData: CombinedStudentData[] = votes.map((vote) => {
-        const studentInfo = students.find(
-          (student) => student.matricNumber.toLowerCase() === vote.matricNumber.toLowerCase()
-        );
-        return {
-          ...vote,
-          fullName: studentInfo?.fullName || "Unknown",
-          department: studentInfo?.department || "Unknown",
-        };
-      });
-
-      setStudentVotes(combinedData);
-    } catch (error) {
-      console.error("Error fetching student votes:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   const getUniquePositions = () => {
     const positions = new Set<string>();
     studentVotes.forEach((vote) => {
-      Object.keys(vote.votes).forEach((position) => positions.add(position));
+      vote.votes.forEach((voteItem) => positions.add(voteItem.position));
     });
     return Array.from(positions);
   };
@@ -75,12 +52,8 @@ export default function StudentVotes() {
   const getUniqueCandidates = () => {
     const candidates = new Set<string>();
     studentVotes.forEach((vote) => {
-      Object.values(vote.votes).forEach((candidateIds) => {
-        if (Array.isArray(candidateIds)) {
-          candidateIds.forEach((id) => candidates.add(id));
-        } else {
-          candidates.add(candidateIds);
-        }
+      vote.votes.forEach((voteItem) => {
+        voteItem.candidateIds.forEach((id) => candidates.add(id));
       });
     });
     return Array.from(candidates);
@@ -89,20 +62,15 @@ export default function StudentVotes() {
   const filteredAndSortedVotes = () => {
     let filtered = studentVotes.filter((vote) => {
       const matchesSearch = 
-        vote.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        vote.userId?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         vote.matricNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        vote.department?.toLowerCase().includes(searchTerm.toLowerCase());
+        vote.userId?.department?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesPosition = !selectedPosition || 
-        Object.keys(vote.votes).includes(selectedPosition);
+        vote.votes.some(v => v.position === selectedPosition);
 
       const matchesCandidate = !selectedCandidate ||
-        Object.values(vote.votes).some((candidateIds) => {
-          if (Array.isArray(candidateIds)) {
-            return candidateIds.includes(selectedCandidate);
-          }
-          return candidateIds === selectedCandidate;
-        });
+        vote.votes.some(v => v.candidateIds.includes(selectedCandidate));
 
       return matchesSearch && matchesPosition && matchesCandidate;
     });
@@ -111,11 +79,11 @@ export default function StudentVotes() {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "name":
-          return (a.fullName || "").localeCompare(b.fullName || "");
+          return (a.userId?.fullName || "").localeCompare(b.userId?.fullName || "");
         case "department":
-          return (a.department || "").localeCompare(b.department || "");
+          return (a.userId?.department || "").localeCompare(b.userId?.department || "");
         case "time":
-          return new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime();
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         default:
           return 0;
       }
@@ -134,19 +102,15 @@ export default function StudentVotes() {
       ...filteredAndSortedVotes().map((vote) => {
         const row = [
           vote.matricNumber,
-          vote.fullName || "",
-          vote.department || "",
-          vote.timestamp ? new Date(vote.timestamp).toLocaleString() : "",
+          vote.userId?.fullName || "",
+          vote.userId?.department || "",
+          new Date(vote.createdAt).toLocaleString(),
         ];
         
         positions.forEach((position) => {
-          const candidateIds = vote.votes[position];
-          if (candidateIds) {
-            if (Array.isArray(candidateIds)) {
-              row.push(candidateIds.join(";"));
-            } else {
-              row.push(candidateIds);
-            }
+          const voteItem = vote.votes.find(v => v.position === position);
+          if (voteItem) {
+            row.push(voteItem.candidateIds.join(";"));
           } else {
             row.push("");
           }
@@ -182,7 +146,7 @@ export default function StudentVotes() {
           </h2>
           <div className="flex space-x-3">
             <button
-              onClick={fetchStudentVotes}
+              onClick={refetch}
               className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition duration-200"
             >
               Refresh
@@ -255,7 +219,7 @@ export default function StudentVotes() {
         <div className="space-y-4">
           {filteredAndSortedVotes().map((vote, index) => (
             <motion.div
-              key={vote.id}
+              key={vote._id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
@@ -264,41 +228,33 @@ export default function StudentVotes() {
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-800">
-                    {vote.fullName}
+                    {vote.userId?.fullName || "Unknown"}
                   </h3>
                   <p className="text-sm text-gray-600">
-                    {vote.matricNumber} • {vote.department}
+                    {vote.matricNumber} • {vote.userId?.department || "Unknown"}
                   </p>
-                  {vote.timestamp && (
-                    <p className="text-xs text-gray-500">
-                      Voted: {new Date(vote.timestamp).toLocaleString()}
-                    </p>
-                  )}
+                  <p className="text-xs text-gray-500">
+                    Voted: {new Date(vote.createdAt).toLocaleString()}
+                  </p>
                 </div>
                 <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-                  {Object.keys(vote.votes).length} positions
+                  {vote.votes.length} positions
                 </span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(vote.votes).map(([position, candidateIds]) => (
-                  <div key={position} className="bg-white rounded-lg p-4">
-                    <h4 className="font-medium text-gray-800 mb-2">{position}</h4>
+                {vote.votes.map((voteItem, voteIndex) => (
+                  <div key={voteIndex} className="bg-white rounded-lg p-4">
+                    <h4 className="font-medium text-gray-800 mb-2">{voteItem.position}</h4>
                     <div className="flex flex-wrap gap-2">
-                      {Array.isArray(candidateIds) ? (
-                        candidateIds.map((candidateId) => (
-                          <span
-                            key={candidateId}
-                            className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm"
-                          >
-                            Candidate {candidateId}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
-                          Candidate {candidateIds}
+                      {voteItem.candidateIds.map((candidateId) => (
+                        <span
+                          key={candidateId}
+                          className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm"
+                        >
+                          Candidate {candidateId}
                         </span>
-                      )}
+                      ))}
                     </div>
                   </div>
                 ))}

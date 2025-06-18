@@ -30,7 +30,7 @@ export default function HomePage() {
   const [timeRemaining, setTimeRemaining] = useState("");
   const [isVotingPeriod, setIsVotingPeriod] = useState(false);
 
-  // Fetch election settings
+  // Fetch election settings from database
   const { data: settingsData, loading: settingsLoading, refetch: refetchSettings } = useApi<{
     success: boolean;
     settings: ElectionSettings;
@@ -45,10 +45,10 @@ export default function HomePage() {
       setCurrentTime(new Date());
     }, 1000);
 
-    // Refetch settings every 30 seconds to get real-time updates
+    // Refetch settings every 10 seconds to get real-time updates from admin
     const settingsInterval = setInterval(() => {
       refetchSettings();
-    }, 30000);
+    }, 10000);
 
     return () => {
       clearInterval(timeInterval);
@@ -56,7 +56,7 @@ export default function HomePage() {
     };
   }, [refetchSettings]);
 
-  // Update countdown and voting status
+  // Update countdown and voting status based on database settings
   useEffect(() => {
     if (!settingsData?.settings) return;
 
@@ -116,9 +116,10 @@ export default function HomePage() {
       const result = await registerUser(formData);
       
       if (result.success) {
-        // Save user data and login time
+        // Save user data, login time, and settings
         localStorage.setItem("voterData", JSON.stringify(result.user));
         localStorage.setItem("loginTime", Date.now().toString());
+        localStorage.setItem("electionSettings", JSON.stringify(settingsData.settings));
         
         // Redirect to voting page
         window.location.href = "/vote";

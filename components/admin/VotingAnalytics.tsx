@@ -2,13 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-
-interface VoteData {
-  id: string;
-  matricNumber: string;
-  votes: { [position: string]: string | string[] };
-  timestamp: string;
-}
+import { useApi } from "@/hooks/useApi";
 
 interface AnalyticsData {
   totalVotes: number;
@@ -23,94 +17,32 @@ interface AnalyticsData {
 }
 
 export default function VotingAnalytics() {
-  const [analyticsData, setAnalyticsData] = useState<AnalyticsData>({
+  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+
+  // Fetch analytics from database
+  const { data: analyticsData, loading, refetch } = useApi<{
+    success: boolean;
+    analytics: AnalyticsData;
+  }>('/analytics');
+
+  const analytics = analyticsData?.analytics || {
     totalVotes: 0,
     positionStats: {},
     hourlyVotes: {},
     departmentStats: {},
-  });
-  const [loading, setLoading] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  };
 
   useEffect(() => {
-    fetchAnalytics();
-    
     // Set up auto-refresh every 30 seconds
-    const interval = setInterval(fetchAnalytics, 30000);
+    const interval = setInterval(() => {
+      refetch();
+    }, 30000);
     setRefreshInterval(interval);
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, []);
-
-  const fetchAnalytics = async () => {
-    setLoading(true);
-    try {
-      // Fetch votes from API
-      const votesResponse = await fetch("https://65130c258e505cebc2e981a1.mockapi.io/votes");
-      const votes: VoteData[] = await votesResponse.json();
-
-      // Fetch login data for department stats
-      const loginResponse = await fetch("https://65130c258e505cebc2e981a1.mockapi.io/login");
-      const loginData = await loginResponse.json();
-
-      // Process analytics
-      const analytics: AnalyticsData = {
-        totalVotes: votes.length,
-        positionStats: {},
-        hourlyVotes: {},
-        departmentStats: {},
-      };
-
-      // Process position statistics
-      votes.forEach((vote) => {
-        Object.entries(vote.votes).forEach(([position, selectedCandidates]) => {
-          if (!analytics.positionStats[position]) {
-            analytics.positionStats[position] = {
-              totalVotes: 0,
-              candidates: {},
-            };
-          }
-
-          analytics.positionStats[position].totalVotes++;
-
-          // Handle both single and multiple selections
-          const candidates = Array.isArray(selectedCandidates) 
-            ? selectedCandidates 
-            : [selectedCandidates];
-
-          candidates.forEach((candidateId) => {
-            if (!analytics.positionStats[position].candidates[candidateId]) {
-              analytics.positionStats[position].candidates[candidateId] = 0;
-            }
-            analytics.positionStats[position].candidates[candidateId]++;
-          });
-        });
-
-        // Process hourly votes
-        if (vote.timestamp) {
-          const hour = new Date(vote.timestamp).getHours();
-          const hourKey = `${hour}:00`;
-          analytics.hourlyVotes[hourKey] = (analytics.hourlyVotes[hourKey] || 0) + 1;
-        }
-      });
-
-      // Process department statistics
-      loginData.forEach((login: any) => {
-        if (login.department) {
-          analytics.departmentStats[login.department] = 
-            (analytics.departmentStats[login.department] || 0) + 1;
-        }
-      });
-
-      setAnalyticsData(analytics);
-    } catch (error) {
-      console.error("Error fetching analytics:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [refetch]);
 
   const getTopCandidate = (candidates: { [candidateId: string]: number }) => {
     const entries = Object.entries(candidates);
@@ -141,7 +73,7 @@ export default function VotingAnalytics() {
             📊 Voting Analytics
           </h2>
           <button
-            onClick={fetchAnalytics}
+            onClick={refetch}
             className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition duration-200"
           >
             Refresh Data
@@ -162,7 +94,7 @@ export default function VotingAnalytics() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Votes</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {analyticsData.totalVotes}
+                  {analytics.totalVotes}
                 </p>
               </div>
             </div>
@@ -181,7 +113,7 @@ export default function VotingAnalytics() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Positions</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {Object.keys(analyticsData.positionStats).length}
+                  {Object.keys(analytics.positionStats).length}
                 </p>
               </div>
             </div>
@@ -200,7 +132,7 @@ export default function VotingAnalytics() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Departments</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {Object.keys(analyticsData.departmentStats).length}
+                  {Object.keys(analytics.departmentStats).length}
                 </p>
               </div>
             </div>
@@ -219,8 +151,8 @@ export default function VotingAnalytics() {
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Peak Hour</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {Object.entries(analyticsData.hourlyVotes).length > 0
-                    ? Object.entries(analyticsData.hourlyVotes).reduce((a, b) =>
+                  {Object.entries(analytics.hourlyVotes).length > 0
+                    ? Object.entries(analytics.hourlyVotes).reduce((a, b) =>
                         a[1] > b[1] ? a : b
                       )[0]
                     : "N/A"}
@@ -236,7 +168,7 @@ export default function VotingAnalytics() {
             Position Results
           </h3>
           <div className="space-y-6">
-            {Object.entries(analyticsData.positionStats).map(([position, stats]) => {
+            {Object.entries(analytics.positionStats).map(([position, stats]) => {
               const topCandidate = getTopCandidate(stats.candidates);
               return (
                 <motion.div
@@ -294,14 +226,14 @@ export default function VotingAnalytics() {
         </div>
 
         {/* Department Statistics */}
-        {Object.keys(analyticsData.departmentStats).length > 0 && (
+        {Object.keys(analytics.departmentStats).length > 0 && (
           <div className="mb-8">
             <h3 className="text-xl font-semibold text-gray-800 mb-4">
               Participation by Department
             </h3>
             <div className="bg-gray-50 rounded-lg p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(analyticsData.departmentStats)
+                {Object.entries(analytics.departmentStats)
                   .sort(([, a], [, b]) => b - a)
                   .map(([department, count]) => (
                     <div key={department} className="bg-white rounded-lg p-4">
@@ -321,7 +253,7 @@ export default function VotingAnalytics() {
         )}
 
         {/* Hourly Voting Pattern */}
-        {Object.keys(analyticsData.hourlyVotes).length > 0 && (
+        {Object.keys(analytics.hourlyVotes).length > 0 && (
           <div>
             <h3 className="text-xl font-semibold text-gray-800 mb-4">
               Voting Pattern by Hour
@@ -330,8 +262,8 @@ export default function VotingAnalytics() {
               <div className="flex items-end space-x-2 h-32">
                 {Array.from({ length: 24 }, (_, i) => {
                   const hour = `${i}:00`;
-                  const votes = analyticsData.hourlyVotes[hour] || 0;
-                  const maxVotes = Math.max(...Object.values(analyticsData.hourlyVotes));
+                  const votes = analytics.hourlyVotes[hour] || 0;
+                  const maxVotes = Math.max(...Object.values(analytics.hourlyVotes));
                   const height = maxVotes > 0 ? (votes / maxVotes) * 100 : 0;
                   
                   return (

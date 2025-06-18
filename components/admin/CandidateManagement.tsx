@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useApi, useApiMutation } from "@/hooks/useApi";
 
 interface Candidate {
   id: number;
   name: string;
+  position: string;
 }
 
 interface Position {
@@ -23,118 +25,131 @@ export default function CandidateManagement() {
     allowMultiple: false,
   });
   const [editingCandidate, setEditingCandidate] = useState<{
-    positionIndex: number;
-    candidateIndex: number;
+    id: number;
     name: string;
   } | null>(null);
 
+  // API hooks
+  const { data: candidatesData, loading: loadingCandidates, refetch: refetchCandidates } = useApi<{
+    success: boolean;
+    positions: Position[];
+  }>('/candidates');
+
+  const { mutate: createPosition, loading: creatingPosition } = useApiMutation('/positions');
+  const { mutate: deletePosition, loading: deletingPosition } = useApiMutation('/positions');
+  const { mutate: createCandidate, loading: creatingCandidate } = useApiMutation('/candidates');
+  const { mutate: updateCandidate, loading: updatingCandidate } = useApiMutation('/candidates');
+  const { mutate: deleteCandidate, loading: deletingCandidate } = useApiMutation('/candidates');
+
   useEffect(() => {
-    loadCandidates();
-  }, []);
-
-  const loadCandidates = async () => {
-    try {
-      const response = await fetch("/data/candidates.json");
-      const data = await response.json();
-      setPositions(data);
-    } catch (error) {
-      console.error("Error loading candidates:", error);
+    if (candidatesData?.positions) {
+      setPositions(candidatesData.positions);
     }
-  };
+  }, [candidatesData]);
 
-  const saveCandidates = async () => {
-    try {
-      // In a real application, this would save to a backend
-      // For now, we'll update localStorage and show success
-      localStorage.setItem("candidates", JSON.stringify(positions));
-      alert("Candidates updated successfully!");
-    } catch (error) {
-      console.error("Error saving candidates:", error);
-      alert("Error saving candidates");
-    }
-  };
-
-  const addPosition = () => {
+  const addPosition = async () => {
     if (!newPosition.position.trim()) {
       alert("Please enter a position name");
       return;
     }
 
-    const position: Position = {
-      position: newPosition.position,
-      allowMultiple: newPosition.allowMultiple,
-      candidates: [],
-    };
-
-    setPositions([...positions, position]);
-    setNewPosition({ position: "", allowMultiple: false });
-    saveCandidates();
-  };
-
-  const deletePosition = (index: number) => {
-    if (confirm("Are you sure you want to delete this position?")) {
-      const updatedPositions = positions.filter((_, i) => i !== index);
-      setPositions(updatedPositions);
-      saveCandidates();
+    try {
+      await createPosition(newPosition);
+      setNewPosition({ position: "", allowMultiple: false });
+      refetchCandidates();
+      alert("Position created successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to create position");
     }
   };
 
-  const addCandidate = () => {
+  const handleDeletePosition = async (positionName: string) => {
+    if (!confirm("Are you sure you want to delete this position and all its candidates?")) {
+      return;
+    }
+
+    try {
+      await deletePosition({
+        method: 'DELETE',
+      }, null, {
+        params: { position: positionName }
+      });
+      refetchCandidates();
+      alert("Position deleted successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to delete position");
+    }
+  };
+
+  const addCandidate = async () => {
     if (!selectedPosition || !newCandidate.trim()) {
       alert("Please select a position and enter candidate name");
       return;
     }
 
-    const positionIndex = positions.findIndex(
-      (p) => p.position === selectedPosition
-    );
-    if (positionIndex === -1) return;
-
-    const newId = Math.max(
-      ...positions.flatMap((p) => p.candidates.map((c) => c.id)),
-      0
-    ) + 1;
-
-    const updatedPositions = [...positions];
-    updatedPositions[positionIndex].candidates.push({
-      id: newId,
-      name: newCandidate,
-    });
-
-    setPositions(updatedPositions);
-    setNewCandidate("");
-    saveCandidates();
-  };
-
-  const deleteCandidate = (positionIndex: number, candidateIndex: number) => {
-    if (confirm("Are you sure you want to delete this candidate?")) {
-      const updatedPositions = [...positions];
-      updatedPositions[positionIndex].candidates.splice(candidateIndex, 1);
-      setPositions(updatedPositions);
-      saveCandidates();
+    try {
+      await createCandidate({
+        name: newCandidate,
+        position: selectedPosition,
+      });
+      setNewCandidate("");
+      refetchCandidates();
+      alert("Candidate added successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to add candidate");
     }
   };
 
-  const startEditCandidate = (
-    positionIndex: number,
-    candidateIndex: number,
-    name: string
-  ) => {
-    setEditingCandidate({ positionIndex, candidateIndex, name });
+  const handleDeleteCandidate = async (candidateId: number) => {
+    if (!confirm("Are you sure you want to delete this candidate?")) {
+      return;
+    }
+
+    try {
+      await deleteCandidate({
+        method: 'DELETE',
+      }, null, {
+        params: { id: candidateId }
+      });
+      refetchCandidates();
+      alert("Candidate deleted successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to delete candidate");
+    }
   };
 
-  const saveEditCandidate = () => {
+  const startEditCandidate = (candidate: Candidate) => {
+    setEditingCandidate({
+      id: candidate.id,
+      name: candidate.name,
+    });
+  };
+
+  const saveEditCandidate = async () => {
     if (!editingCandidate) return;
 
-    const updatedPositions = [...positions];
-    updatedPositions[editingCandidate.positionIndex].candidates[
-      editingCandidate.candidateIndex
-    ].name = editingCandidate.name;
-
-    setPositions(updatedPositions);
-    setEditingCandidate(null);
-    saveCandidates();
+    try {
+      await updateCandidate({
+        method: 'PUT',
+      }, {
+        id: editingCandidate.id,
+        name: editingCandidate.name,
+      });
+      setEditingCandidate(null);
+      refetchCandidates();
+      alert("Candidate updated successfully!");
+    } catch (error: any) {
+      alert(error.response?.data?.error || "Failed to update candidate");
+    }
   };
+
+  if (loadingCandidates) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -157,6 +172,7 @@ export default function CandidateManagement() {
                 setNewPosition({ ...newPosition, position: e.target.value })
               }
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              disabled={creatingPosition}
             />
             <div className="flex items-center space-x-2">
               <input
@@ -170,6 +186,7 @@ export default function CandidateManagement() {
                   })
                 }
                 className="h-4 w-4 text-blue-600"
+                disabled={creatingPosition}
               />
               <label htmlFor="allowMultiple" className="text-sm text-gray-700">
                 Allow multiple selections
@@ -177,9 +194,10 @@ export default function CandidateManagement() {
             </div>
             <button
               onClick={addPosition}
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition duration-200"
+              disabled={creatingPosition}
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add Position
+              {creatingPosition ? "Adding..." : "Add Position"}
             </button>
           </div>
         </div>
@@ -194,6 +212,7 @@ export default function CandidateManagement() {
               value={selectedPosition}
               onChange={(e) => setSelectedPosition(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+              disabled={creatingCandidate}
             >
               <option value="">Select Position</option>
               {positions.map((position) => (
@@ -208,12 +227,14 @@ export default function CandidateManagement() {
               value={newCandidate}
               onChange={(e) => setNewCandidate(e.target.value)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+              disabled={creatingCandidate}
             />
             <button
               onClick={addCandidate}
-              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition duration-200"
+              disabled={creatingCandidate}
+              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add Candidate
+              {creatingCandidate ? "Adding..." : "Add Candidate"}
             </button>
           </div>
         </div>
@@ -239,21 +260,21 @@ export default function CandidateManagement() {
                   </p>
                 </div>
                 <button
-                  onClick={() => deletePosition(positionIndex)}
-                  className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition duration-200"
+                  onClick={() => handleDeletePosition(position.position)}
+                  disabled={deletingPosition}
+                  className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Delete Position
+                  {deletingPosition ? "Deleting..." : "Delete Position"}
                 </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {position.candidates.map((candidate, candidateIndex) => (
+                {position.candidates.map((candidate) => (
                   <div
                     key={candidate.id}
                     className="bg-white p-4 rounded-lg shadow-sm border"
                   >
-                    {editingCandidate?.positionIndex === positionIndex &&
-                    editingCandidate?.candidateIndex === candidateIndex ? (
+                    {editingCandidate?.id === candidate.id ? (
                       <div className="space-y-2">
                         <input
                           type="text"
@@ -265,16 +286,19 @@ export default function CandidateManagement() {
                             })
                           }
                           className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          disabled={updatingCandidate}
                         />
                         <div className="flex space-x-2">
                           <button
                             onClick={saveEditCandidate}
-                            className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600"
+                            disabled={updatingCandidate}
+                            className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 disabled:opacity-50"
                           >
-                            Save
+                            {updatingCandidate ? "Saving..." : "Save"}
                           </button>
                           <button
                             onClick={() => setEditingCandidate(null)}
+                            disabled={updatingCandidate}
                             className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600"
                           >
                             Cancel
@@ -293,24 +317,17 @@ export default function CandidateManagement() {
                         </div>
                         <div className="flex space-x-2">
                           <button
-                            onClick={() =>
-                              startEditCandidate(
-                                positionIndex,
-                                candidateIndex,
-                                candidate.name
-                              )
-                            }
+                            onClick={() => startEditCandidate(candidate)}
                             className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
                           >
                             Edit
                           </button>
                           <button
-                            onClick={() =>
-                              deleteCandidate(positionIndex, candidateIndex)
-                            }
-                            className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"
+                            onClick={() => handleDeleteCandidate(candidate.id)}
+                            disabled={deletingCandidate}
+                            className="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 disabled:opacity-50"
                           >
-                            Delete
+                            {deletingCandidate ? "Deleting..." : "Delete"}
                           </button>
                         </div>
                       </div>
