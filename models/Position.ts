@@ -14,6 +14,7 @@ const PositionSchema = new Schema<IPosition>({
     required: true,
     unique: true,
     trim: true,
+    maxlength: 100,
   },
   allowMultiple: {
     type: Boolean,
@@ -27,8 +28,8 @@ const PositionSchema = new Schema<IPosition>({
   timestamps: true,
 });
 
-// Remove duplicate indexes - only use schema.index()
-PositionSchema.index({ position: 1 });
+// Optimized indexes
+PositionSchema.index({ position: 1 }, { unique: true });
 PositionSchema.index({ isActive: 1 });
 
 export default mongoose.models.Position || mongoose.model<IPosition>('Position', PositionSchema);

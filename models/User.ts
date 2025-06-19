@@ -17,16 +17,19 @@ const UserSchema = new Schema<IUser>({
     unique: true,
     lowercase: true,
     trim: true,
+    maxlength: 20,
   },
   fullName: {
     type: String,
     required: true,
     trim: true,
+    maxlength: 100,
   },
   department: {
     type: String,
     required: true,
     trim: true,
+    maxlength: 100,
   },
   image: {
     type: String,
@@ -40,7 +43,7 @@ const UserSchema = new Schema<IUser>({
   timestamps: true,
 });
 
-// Remove any existing indexes and create clean ones
+// Optimized indexes
 UserSchema.index({ matricNumber: 1 }, { unique: true });
 UserSchema.index({ department: 1 });
 UserSchema.index({ hasVoted: 1 });

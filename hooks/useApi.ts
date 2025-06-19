@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import apiClient from '@/lib/api-client';
 
 interface UseApiOptions {
   immediate?: boolean;
   onSuccess?: (data: any) => void;
   onError?: (error: any) => void;
+  retries?: number;
+  retryDelay?: number;
 }
 
 export function useApi<T = any>(
@@ -15,9 +17,15 @@ export function useApi<T = any>(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { immediate = true, onSuccess, onError } = options;
+  const { 
+    immediate = true, 
+    onSuccess, 
+    onError, 
+    retries = 2, 
+    retryDelay = 1000 
+  } = options;
 
-  const execute = async (config?: any) => {
+  const execute = useCallback(async (config?: any, attemptCount = 0): Promise<any> => {
     try {
       setLoading(true);
       setError(null);
@@ -32,19 +40,27 @@ export function useApi<T = any>(
       return response.data;
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || err.message || 'An error occurred';
+      
+      // Retry logic for network errors and timeouts
+      if (attemptCount < retries && (err.code === 'ECONNABORTED' || err.code === 'NETWORK_ERROR')) {
+        console.log(`Retrying request to ${url}, attempt ${attemptCount + 1}/${retries + 1}`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay * (attemptCount + 1)));
+        return execute(config, attemptCount + 1);
+      }
+      
       setError(errorMessage);
       onError?.(err);
       throw err;
     } finally {
       setLoading(false);
     }
-  };
+  }, [url, onSuccess, onError, retries, retryDelay]);
 
   useEffect(() => {
     if (immediate) {
       execute();
     }
-  }, [url, immediate]);
+  }, [immediate, execute]);
 
   return {
     data,
@@ -73,6 +89,7 @@ export function useApiMutation<T = any>(url: string) {
           method: config.method || 'POST',
           data,
           params: extraConfig?.params,
+          timeout: 30000, // 30 second timeout
           ...config,
         };
       } else {
@@ -81,6 +98,7 @@ export function useApiMutation<T = any>(url: string) {
           url,
           method: 'POST',
           data: config || data,
+          timeout: 30000, // 30 second timeout
           ...extraConfig,
         };
       }

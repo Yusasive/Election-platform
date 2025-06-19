@@ -8,34 +8,42 @@ export async function GET() {
   try {
     await connectDB();
 
-    // Use Promise.all for parallel queries to improve performance
-    const [positions, candidates] = await Promise.all([
-      Position.find({ isActive: true }).sort({ position: 1 }).lean(),
-      Candidate.find({}).sort({ id: 1 }).lean()
-    ]);
-
-    // Group candidates by position more efficiently
-    const candidatesByPosition = candidates.reduce((acc, candidate) => {
-      if (!acc[candidate.position]) {
-        acc[candidate.position] = [];
+    // Use aggregation pipeline for better performance
+    const positionsWithCandidates = await Position.aggregate([
+      { $match: { isActive: true } },
+      { $sort: { position: 1 } },
+      {
+        $lookup: {
+          from: 'candidates',
+          localField: 'position',
+          foreignField: 'position',
+          as: 'candidates',
+          pipeline: [
+            { $sort: { id: 1 } },
+            {
+              $project: {
+                id: 1,
+                name: 1,
+                nickname: { $ifNull: ['$nickname', ''] },
+                image: { $ifNull: ['$image', ''] },
+                department: { $ifNull: ['$department', ''] },
+                level: { $ifNull: ['$level', ''] },
+                position: 1,
+                _id: 0
+              }
+            }
+          ]
+        }
+      },
+      {
+        $project: {
+          position: 1,
+          allowMultiple: 1,
+          candidates: 1,
+          _id: 0
+        }
       }
-      acc[candidate.position].push({
-        id: candidate.id,
-        name: candidate.name,
-        nickname: candidate.nickname || '',
-        image: candidate.image || '',
-        department: candidate.department || '',
-        level: candidate.level || '',
-        position: candidate.position,
-      });
-      return acc;
-    }, {} as Record<string, any[]>);
-
-    const positionsWithCandidates = positions.map(pos => ({
-      position: pos.position,
-      allowMultiple: pos.allowMultiple,
-      candidates: candidatesByPosition[pos.position] || [],
-    }));
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -44,7 +52,11 @@ export async function GET() {
   } catch (error) {
     console.error('Candidates fetch error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        success: false,
+        error: 'Failed to load candidates. Please try again.',
+        positions: []
+      },
       { status: 500 }
     );
   }
@@ -72,12 +84,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get next candidate ID
-    const lastCandidate = await Candidate.findOne().sort({ id: -1 }).lean();
+    // Get next candidate ID more efficiently
+    const lastCandidate = await Candidate.findOne({}, { id: 1 }).sort({ id: -1 }).lean();
     const nextId = lastCandidate ? lastCandidate.id + 1 : 1;
 
     // Create new candidate
-    const candidate = new Candidate({
+    const candidateData = {
       id: nextId,
       name: sanitizeInput(name),
       nickname: nickname ? sanitizeInput(nickname) : '',
@@ -85,8 +97,9 @@ export async function POST(request: NextRequest) {
       department: department ? sanitizeInput(department) : '',
       level: level ? sanitizeInput(level) : '',
       position: sanitizeInput(position),
-    });
+    };
 
+    const candidate = new Candidate(candidateData);
     await candidate.save();
 
     return NextResponse.json({
@@ -135,8 +148,8 @@ export async function PUT(request: NextRequest) {
     const candidate = await Candidate.findOneAndUpdate(
       { id },
       updateData,
-      { new: true }
-    ).lean();
+      { new: true, lean: true }
+    );
 
     if (!candidate) {
       return NextResponse.json(

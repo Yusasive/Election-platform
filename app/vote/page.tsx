@@ -69,12 +69,14 @@ export default function VotingPage() {
   const [candidatesLoaded, setCandidatesLoaded] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
-  // Fetch candidates from database with better error handling and timeout
+  // Fetch candidates from database with better error handling
   const { data: candidatesData, loading: loadingCandidates, error: candidatesError, refetch: refetchCandidates } = useApi<{
     success: boolean;
     positions: Position[];
   }>('/candidates', { 
     immediate: true,
+    retries: 3,
+    retryDelay: 2000,
     onSuccess: (data) => {
       if (data?.success && Array.isArray(data?.positions)) {
         setCandidatesLoaded(true);
@@ -89,7 +91,7 @@ export default function VotingPage() {
       setCandidatesLoaded(false);
       console.error("Candidates fetch error:", error);
       const errorMsg = error.response?.data?.error || "Failed to load candidates";
-      toast.error(`${errorMsg}. Retrying...`, { duration: 4000 });
+      toast.error(`${errorMsg}. Retrying automatically...`, { duration: 4000 });
     }
   });
 
@@ -98,6 +100,7 @@ export default function VotingPage() {
     success: boolean;
     settings: ElectionSettings;
   }>('/settings', {
+    retries: 2,
     onError: (error) => {
       console.error("Settings fetch error:", error);
       toast.error("Failed to load election settings");
@@ -158,25 +161,11 @@ export default function VotingPage() {
       if (type === 'warning') {
         toast.warning(message, { duration: 5000 });
       } else {
-        toast.info(message, { duration: 4000 });
+        toast(message, { duration: 4000, icon: 'ℹ️' });
       }
       setLastToastTime(now);
     }
   }, [lastToastTime]);
-
-  // Auto-retry candidates loading with exponential backoff
-  useEffect(() => {
-    if (candidatesError && !loadingCandidates && !candidatesLoaded && retryCount < 3) {
-      const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Max 10 seconds
-      const retryTimer = setTimeout(() => {
-        setRetryCount(prev => prev + 1);
-        toast.info(`Retrying to load candidates... (${retryCount + 1}/3)`);
-        refetchCandidates();
-      }, retryDelay);
-
-      return () => clearTimeout(retryTimer);
-    }
-  }, [candidatesError, loadingCandidates, candidatesLoaded, retryCount, refetchCandidates]);
 
   // Initial setup and validation
   useEffect(() => {
@@ -220,10 +209,10 @@ export default function VotingPage() {
   // Real-time settings updates
   useEffect(() => {
     if (!hasRedirected) {
-      // Refetch settings every 5 seconds for real-time updates
+      // Refetch settings every 10 seconds for real-time updates
       const settingsInterval = setInterval(() => {
         refetchSettings();
-      }, 5000);
+      }, 10000);
 
       return () => clearInterval(settingsInterval);
     }
@@ -309,7 +298,7 @@ export default function VotingPage() {
     }
 
     if (!candidatesLoaded) {
-      toast.error("Candidates data not loaded. Please refresh the page.");
+      toast.error("Candidates data not loaded. Please wait...");
       return;
     }
 
@@ -324,7 +313,7 @@ export default function VotingPage() {
       if (updatedSelections.includes(candidateId)) {
         toast.success(`Selected candidate for ${position}`, { duration: 2000 });
       } else {
-        toast.info(`Deselected candidate for ${position}`, { duration: 2000 });
+        toast(`Deselected candidate for ${position}`, { duration: 2000, icon: '↩️' });
       }
     } else {
       setSelections({ ...selections, [position]: candidateId });
@@ -808,7 +797,7 @@ export default function VotingPage() {
                 Array.isArray(s) ? s.length > 0 : s
               ).length;
               const totalPositions = candidatesData?.positions?.length || 0;
-              toast.info(`Progress: ${selectionCount}/${totalPositions} positions voted`, { duration: 3000 });
+              toast(`Progress: ${selectionCount}/${totalPositions} positions voted`, { duration: 3000, icon: '📊' });
             }}
             className="hover:text-blue-500 transition duration-200"
           >

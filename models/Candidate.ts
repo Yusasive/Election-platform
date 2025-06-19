@@ -22,11 +22,13 @@ const CandidateSchema = new Schema<ICandidate>({
     type: String,
     required: true,
     trim: true,
+    maxlength: 100,
   },
   nickname: {
     type: String,
     trim: true,
     default: '',
+    maxlength: 50,
   },
   image: {
     type: String,
@@ -36,24 +38,26 @@ const CandidateSchema = new Schema<ICandidate>({
     type: String,
     trim: true,
     default: '',
+    maxlength: 100,
   },
   level: {
     type: String,
     trim: true,
     default: '',
+    maxlength: 20,
   },
   position: {
     type: String,
     required: true,
     trim: true,
+    maxlength: 100,
   },
 }, {
   timestamps: true,
 });
 
-// Remove duplicate indexes - only use schema.index()
-CandidateSchema.index({ position: 1 });
-CandidateSchema.index({ id: 1 });
-CandidateSchema.index({ department: 1 });
+// Optimized indexes - no duplicates
+CandidateSchema.index({ position: 1, id: 1 }); // Compound index for better performance
+CandidateSchema.index({ id: 1 }, { unique: true });
 
 export default mongoose.models.Candidate || mongoose.model<ICandidate>('Candidate', CandidateSchema);
