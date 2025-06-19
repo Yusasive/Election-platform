@@ -477,23 +477,24 @@ export default function CandidateManagement() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {position.candidates.map((candidate) => (
                   <div
                     key={candidate.id}
-                    className="bg-white p-4 rounded-lg shadow-sm border hover:shadow-md transition duration-200"
+                    className="bg-white rounded-xl shadow-sm border hover:shadow-md transition duration-200 overflow-hidden"
                   >
                     {editingCandidate?.id === candidate.id ? (
-                      <div className="space-y-3">
+                      <div className="p-4 space-y-3">
                         {editingCandidate.image && (
                           <div className="flex justify-center">
-                            <Image
-                              src={editingCandidate.image}
-                              alt="Candidate"
-                              width={80}
-                              height={80}
-                              className="rounded-full object-cover"
-                            />
+                            <div className="relative w-20 h-20 rounded-full overflow-hidden">
+                              <Image
+                                src={editingCandidate.image}
+                                alt="Candidate"
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
                           </div>
                         )}
                         
@@ -595,54 +596,66 @@ export default function CandidateManagement() {
                         </div>
                       </div>
                     ) : (
-                      <div>
-                        {candidate.image && (
-                          <div className="flex justify-center mb-3">
-                            <Image
-                              src={candidate.image}
-                              alt={candidate.name}
-                              width={80}
-                              height={80}
-                              className="rounded-full object-cover"
-                            />
-                          </div>
-                        )}
+                      <div className="p-4">
+                        {/* Candidate Image */}
+                        <div className="flex justify-center mb-4">
+                          {candidate.image ? (
+                            <div className="relative w-20 h-20 rounded-full overflow-hidden shadow-md">
+                              <Image
+                                src={candidate.image}
+                                alt={candidate.name}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-20 h-20 bg-gradient-to-br from-gray-400 to-gray-600 rounded-full flex items-center justify-center shadow-md">
+                              <span className="text-white font-bold text-lg">
+                                {candidate.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         
-                        <div className="text-center mb-3">
-                          <h4 className="font-semibold text-gray-800">
+                        {/* Candidate Information */}
+                        <div className="text-center space-y-2">
+                          <h4 className="font-bold text-gray-800 text-lg leading-tight">
                             {candidate.name}
                           </h4>
+                          
                           {candidate.nickname && (
-                            <p className="text-sm text-blue-600 italic">
+                            <p className="text-blue-600 font-medium italic text-sm">
                               "{candidate.nickname}"
                             </p>
                           )}
+                          
                           {candidate.department && (
-                            <p className="text-xs text-gray-600">
+                            <p className="text-gray-600 text-sm font-medium">
                               {candidate.department}
                             </p>
                           )}
+                          
                           {candidate.level && (
-                            <p className="text-xs text-gray-500">
-                              {candidate.level}
-                            </p>
+                            <div className="flex justify-center">
+                              <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-xs font-semibold">
+                                {candidate.level}
+                              </span>
+                            </div>
                           )}
-                          <span className="inline-block mt-1 text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                            ID: {candidate.id}
-                          </span>
                         </div>
                         
-                        <div className="flex space-x-2">
+                        {/* Action Buttons */}
+                        <div className="flex space-x-2 mt-4">
                           <button
                             onClick={() => startEditCandidate(candidate)}
-                            className="flex-1 bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+                            className="flex-1 bg-blue-500 text-white px-3 py-2 rounded text-sm hover:bg-blue-600 transition duration-200"
                           >
                             Edit
                           </button>
                           <button
                             onClick={() => handleDeleteCandidate(candidate.id)}
                             disabled={deletingCandidate}
-                            className="flex-1 bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 disabled:opacity-50"
+                            className="flex-1 bg-red-500 text-white px-3 py-2 rounded text-sm hover:bg-red-600 disabled:opacity-50 transition duration-200"
                           >
                             {deletingCandidate ? "..." : "Delete"}
                           </button>
@@ -654,9 +667,11 @@ export default function CandidateManagement() {
               </div>
 
               {position.candidates.length === 0 && (
-                <p className="text-gray-500 text-center py-8">
-                  No candidates added for this position yet
-                </p>
+                <div className="text-center py-12">
+                  <div className="text-4xl mb-3">👤</div>
+                  <p className="text-gray-500 text-lg">No candidates added yet</p>
+                  <p className="text-gray-400 text-sm">Add candidates for this position above</p>
+                </div>
               )}
             </motion.div>
           ))}
