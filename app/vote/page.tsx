@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useApi, useApiMutation } from "@/hooks/useApi";
 import { formatTime } from "@/lib/utils";
 import toast from 'react-hot-toast';
+import Image from 'next/image';
 
 interface Candidate {
   id: number; 
@@ -634,7 +635,7 @@ export default function VotingPage() {
               </p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {position.candidates.map((candidate: Candidate) => (
                 <motion.div
                   key={candidate.id}
@@ -649,63 +650,102 @@ export default function VotingPage() {
                     )
                   }
                 >
-                  <div className={`p-4 rounded-xl border-2 transition duration-200 ${
+                  <div className={`relative p-6 rounded-2xl border-2 transition duration-300 ${
                     (position.allowMultiple 
                       ? selections[position.position]?.includes(candidate.id.toString())
                       : selections[position.position] === candidate.id.toString())
-                      ? "border-blue-500 bg-blue-50 shadow-md"
-                      : "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100"
+                      ? "border-blue-500 bg-blue-50 shadow-lg ring-2 ring-blue-200"
+                      : "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md"
                   }`}>
-                    <div className="flex items-center space-x-3">
+                    {/* Selection Indicator */}
+                    <div className="absolute top-4 right-4">
                       {position.allowMultiple ? (
-                        <input
-                          type="checkbox"
-                          checked={
-                            !!selections[position.position]?.includes(
-                              candidate.id.toString()
-                            )
-                          }
-                          onChange={() => {}}
-                          className="h-5 w-5 text-blue-600 rounded focus:ring-blue-500"
-                        />
-                      ) : (
-                        <input
-                          type="radio"
-                          name={position.position}
-                          checked={
-                            selections[position.position] ===
-                            candidate.id.toString()
-                          }
-                          onChange={() => {}}
-                          className="h-5 w-5 text-blue-600 focus:ring-blue-500"
-                        />
-                      )}
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-800">
-                          {candidate.name}
-                        </h3>
-                        {candidate.nickname && (
-                          <p className="text-sm text-blue-600 italic">
-                            "{candidate.nickname}"
-                          </p>
-                        )}
-                        <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
-                          <span>ID: {candidate.id}</span>
-                          {candidate.department && (
-                            <>
-                              <span>•</span>
-                              <span>{candidate.department}</span>
-                            </>
-                          )}
-                          {candidate.level && (
-                            <>
-                              <span>•</span>
-                              <span>{candidate.level}</span>
-                            </>
+                        <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition duration-200 ${
+                          selections[position.position]?.includes(candidate.id.toString())
+                            ? "bg-blue-500 border-blue-500"
+                            : "border-gray-300 bg-white"
+                        }`}>
+                          {selections[position.position]?.includes(candidate.id.toString()) && (
+                            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
                           )}
                         </div>
-                      </div>
+                      ) : (
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition duration-200 ${
+                          selections[position.position] === candidate.id.toString()
+                            ? "bg-blue-500 border-blue-500"
+                            : "border-gray-300 bg-white"
+                        }`}>
+                          {selections[position.position] === candidate.id.toString() && (
+                            <div className="w-3 h-3 bg-white rounded-full"></div>
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* Candidate Image */}
+                    <div className="flex justify-center mb-4">
+                      {candidate.image ? (
+                        <div className="relative w-20 h-20 rounded-full overflow-hidden shadow-lg">
+                          <Image
+                            src={candidate.image}
+                            alt={candidate.name}
+                            fill
+                            className="object-cover"
+                            onError={() => {
+                              // Fallback to initials if image fails to load
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-20 h-20 bg-gradient-to-br from-gray-400 to-gray-600 rounded-full flex items-center justify-center shadow-lg">
+                          <span className="text-white font-bold text-xl">
+                            {candidate.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Candidate Information */}
+                    <div className="text-center space-y-2">
+                      <h3 className="font-bold text-lg text-gray-800 leading-tight">
+                        {candidate.name}
+                      </h3>
+                      
+                      {candidate.nickname && (
+                        <p className="text-blue-600 font-medium italic text-sm">
+                          "{candidate.nickname}"
+                        </p>
+                      )}
+                      
+                      {candidate.department && (
+                        <p className="text-gray-600 text-sm font-medium">
+                          {candidate.department}
+                        </p>
+                      )}
+                      
+                      {candidate.level && (
+                        <div className="inline-block">
+                          <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-xs font-semibold">
+                            {candidate.level}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selection Overlay */}
+                    {(position.allowMultiple 
+                      ? selections[position.position]?.includes(candidate.id.toString())
+                      : selections[position.position] === candidate.id.toString()) && (
+                      <div className="absolute inset-0 bg-blue-500 bg-opacity-10 rounded-2xl pointer-events-none">
+                        <div className="absolute top-2 left-2">
+                          <div className="bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                            SELECTED
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               ))}
