@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // Check if user already exists
     const existingUser = await User.findOne({ 
       matricNumber: sanitizedData.matricNumber 
-    });
+    }).lean();
 
     if (existingUser) {
       return NextResponse.json(
@@ -45,8 +45,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create new user
-    const user = new User(sanitizedData);
+    // Create new user with explicit field mapping
+    const userData = {
+      matricNumber: sanitizedData.matricNumber,
+      fullName: sanitizedData.fullName,
+      department: sanitizedData.department,
+      image: sanitizedData.image,
+      hasVoted: false,
+    };
+
+    const user = new User(userData);
     await user.save();
 
     return NextResponse.json({
@@ -59,8 +67,30 @@ export async function POST(request: NextRequest) {
         hasVoted: user.hasVoted,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('User creation error:', error);
+    
+    // Handle specific MongoDB duplicate key errors
+    if (error.code === 11000) {
+      if (error.keyPattern?.matricNumber) {
+        return NextResponse.json(
+          { error: 'A user with this matric number already exists' },
+          { status: 409 }
+        );
+      } else if (error.keyPattern?.email) {
+        // This shouldn't happen with our current schema, but handle it gracefully
+        return NextResponse.json(
+          { error: 'Database schema conflict detected. Please contact administrator.' },
+          { status: 500 }
+        );
+      } else {
+        return NextResponse.json(
+          { error: 'Duplicate entry detected' },
+          { status: 409 }
+        );
+      }
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -78,7 +108,7 @@ export async function GET(request: NextRequest) {
     if (matricNumber) {
       const user = await User.findOne({ 
         matricNumber: matricNumber.toLowerCase() 
-      });
+      }).lean();
       
       if (!user) {
         return NextResponse.json(
@@ -102,7 +132,8 @@ export async function GET(request: NextRequest) {
     // Get all users (admin only)
     const users = await User.find({})
       .select('-__v')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     return NextResponse.json({
       success: true,

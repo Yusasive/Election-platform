@@ -40,8 +40,8 @@ const UserSchema = new Schema<IUser>({
   timestamps: true,
 });
 
-// Create indexes for better performance
-UserSchema.index({ matricNumber: 1 });
+// Remove any existing indexes and create clean ones
+UserSchema.index({ matricNumber: 1 }, { unique: true });
 UserSchema.index({ department: 1 });
 UserSchema.index({ hasVoted: 1 });
 
