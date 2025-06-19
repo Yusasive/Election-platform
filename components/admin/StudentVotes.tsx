@@ -18,28 +18,72 @@ interface StudentVote {
   createdAt: string;
 }
 
+interface Candidate {
+  id: number;
+  name: string;
+  nickname?: string;
+  position: string;
+}
+
+interface Position {
+  position: string;
+  allowMultiple: boolean;
+  candidates: Candidate[];
+}
+
 export default function StudentVotes() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPosition, setSelectedPosition] = useState("");
   const [selectedCandidate, setSelectedCandidate] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "department" | "time">("time");
+  const [candidateMap, setCandidateMap] = useState<{ [key: string]: Candidate }>({});
 
   // Fetch votes from database
-  const { data: votesData, loading, refetch } = useApi<{
+  const { data: votesData, loading: loadingVotes, refetch: refetchVotes } = useApi<{
     success: boolean;
     votes: StudentVote[];
   }>('/votes');
 
+  // Fetch candidates to map IDs to names
+  const { data: candidatesData, loading: loadingCandidates } = useApi<{
+    success: boolean;
+    positions: Position[];
+  }>('/candidates');
+
   const studentVotes = votesData?.votes || [];
+  const loading = loadingVotes || loadingCandidates;
+
+  // Build candidate map for quick lookup
+  useEffect(() => {
+    if (candidatesData?.success && candidatesData?.positions) {
+      const map: { [key: string]: Candidate } = {};
+      candidatesData.positions.forEach((position) => {
+        position.candidates.forEach((candidate) => {
+          map[candidate.id.toString()] = candidate;
+        });
+      });
+      setCandidateMap(map);
+    }
+  }, [candidatesData]);
 
   useEffect(() => {
     // Auto-refresh every 30 seconds
     const interval = setInterval(() => {
-      refetch();
+      refetchVotes();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [refetch]);
+  }, [refetchVotes]);
+
+  const getCandidateName = (candidateId: string): string => {
+    const candidate = candidateMap[candidateId];
+    if (candidate) {
+      return candidate.nickname 
+        ? `${candidate.name} "${candidate.nickname}"`
+        : candidate.name;
+    }
+    return `Candidate ${candidateId}`;
+  };
 
   const getUniquePositions = () => {
     const positions = new Set<string>();
@@ -110,7 +154,8 @@ export default function StudentVotes() {
         positions.forEach((position) => {
           const voteItem = vote.votes.find(v => v.position === position);
           if (voteItem) {
-            row.push(voteItem.candidateIds.join(";"));
+            const candidateNames = voteItem.candidateIds.map(id => getCandidateName(id));
+            row.push(candidateNames.join(";"));
           } else {
             row.push("");
           }
@@ -133,6 +178,7 @@ export default function StudentVotes() {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500"></div>
+        <p className="ml-4 text-gray-600">Loading student votes...</p>
       </div>
     );
   }
@@ -146,7 +192,7 @@ export default function StudentVotes() {
           </h2>
           <div className="flex space-x-3">
             <button
-              onClick={refetch}
+              onClick={refetchVotes}
               className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition duration-200"
             >
               Refresh
@@ -190,9 +236,9 @@ export default function StudentVotes() {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Candidates</option>
-              {getUniqueCandidates().map((candidate) => (
-                <option key={candidate} value={candidate}>
-                  Candidate {candidate}
+              {getUniqueCandidates().map((candidateId) => (
+                <option key={candidateId} value={candidateId}>
+                  {getCandidateName(candidateId)}
                 </option>
               ))}
             </select>
@@ -246,15 +292,41 @@ export default function StudentVotes() {
                 {vote.votes.map((voteItem, voteIndex) => (
                   <div key={voteIndex} className="bg-white rounded-lg p-4">
                     <h4 className="font-medium text-gray-800 mb-2">{voteItem.position}</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {voteItem.candidateIds.map((candidateId) => (
-                        <span
-                          key={candidateId}
-                          className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm"
-                        >
-                          Candidate {candidateId}
-                        </span>
-                      ))}
+                    <div className="space-y-2">
+                      {voteItem.candidateIds.map((candidateId) => {
+                        const candidate = candidateMap[candidateId];
+                        return (
+                          <div
+                            key={candidateId}
+                            className="flex items-center space-x-3 p-2 bg-green-50 rounded-lg border border-green-200"
+                          >
+                            {candidate?.name ? (
+                              <div className="flex-1">
+                                <p className="font-medium text-green-800">
+                                  {candidate.name}
+                                </p>
+                                {candidate.nickname && (
+                                  <p className="text-sm text-green-600 italic">
+                                    "{candidate.nickname}"
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex-1">
+                                <p className="font-medium text-green-800">
+                                  Candidate {candidateId}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  (Candidate details not found)
+                                </p>
+                              </div>
+                            )}
+                            <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-medium">
+                              ✓ Selected
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -265,6 +337,7 @@ export default function StudentVotes() {
 
         {filteredAndSortedVotes().length === 0 && (
           <div className="text-center py-12">
+            <div className="text-6xl mb-4">🗳️</div>
             <p className="text-gray-500 text-lg">No votes found matching your criteria</p>
             <p className="text-gray-400">Try adjusting your filters</p>
           </div>
