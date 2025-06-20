@@ -1,5 +1,15 @@
 import axios from 'axios';
 
+interface RequestMetadata {
+  startTime: Date;
+}
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    metadata?: RequestMetadata;
+  }
+}
+
 const apiClient = axios.create({
   baseURL: '/api',
   timeout: 30000, // Increased to 30 seconds
@@ -32,7 +42,7 @@ apiClient.interceptors.response.use(
   (response) => {
     // Log response time for debugging
     const endTime = new Date();
-    const duration = endTime.getTime() - response.config.metadata?.startTime?.getTime();
+    const duration = endTime.getTime() - (response.config.metadata?.startTime?.getTime() || 0);
     if (duration > 5000) {
       console.warn(`Slow API response: ${response.config.url} took ${duration}ms`);
     }
